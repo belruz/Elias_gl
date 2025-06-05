@@ -1,0 +1,14 @@
+# Ignorar el archivo .env que contiene las claves
+.env
+
+#Carpetas con pdfs
+Corte_Suprema/
+Corte_Apelaciones/
+Civil/
+Cobranza/
+Laboral/
+Penal/
+Familia/
+
+#Logs
+*.log
