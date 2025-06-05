@@ -877,7 +877,8 @@ class ControladorLupaSuprema(ControladorLupa):
         except Exception as e:
             print(f"  Error al cambiar a la pestaña 'Expediente Corte Apelaciones': {str(e)}")
             self._cerrar_ambos_modales()
-            
+
+# Controlador de lupas corte Suprema 
     def manejar(self, tab_name):
         try:
             print(f"  Procesando lupa tipo '{self.__class__.__name__}' en pestaña '{tab_name}'...")
@@ -920,7 +921,7 @@ class ControladorLupaSuprema(ControladorLupa):
     def _procesar_contenido_suprema(self, tab_name, caratulado):
         try:
             print(f"[INFO] Verificando movimientos nuevos en pestaña '{tab_name}'...")
-            # Cambiar el selector para obtener el panel completo
+            # Selector para obtener el panel completo de detalles de causas
             panel = self.page.query_selector("#modalDetalleMisCauSuprema .modal-body .panel.panel-default")
             numero_causa = None
             if panel:
@@ -1135,9 +1136,10 @@ class ControladorLupaApelacionesPrincipal(ControladorLupa):
                 print("[WARN] No se pudo activar el tab-pane de movimientos")
                 return False
             
-            # Esperar brevemente para asegurar que el tab-pane esté visible
+            # Esperar  para asegurar que el tab-pane esté visible
             random_sleep(1, 2)
             
+            # Selector para obtener el panel completo de detalles de causas
             panel = self.page.query_selector("#modalDetalleMisCauApelaciones .modal-body .panel.panel-default")
             numero_causa = None
             if panel:
@@ -1207,7 +1209,7 @@ class ControladorLupaApelacionesPrincipal(ControladorLupa):
                         pdf_path = None
                         if pdf_form:
                             token = pdf_form.query_selector("input[name='valorDoc']").get_attribute("value")
-                            # Modificar el formato del nombre del archivo según lo solicitado
+                            # Modificar el formato del nombre del archivo
                             pdf_filename = f"{carpeta_caratulado}/Causa_{numero_causa}_folio_{folio}_fecha_{fecha_tramite_str.replace('/', '_')}.pdf"
                             
                             if token:
@@ -2014,7 +2016,7 @@ def navigate_mis_causas_tabs(page):
     print("--- Finalizada navegación por pestañas de Mis Causas ---\n")
 
 
-#Función principal para automatizar PJUD
+#Función principal del flujo PJUD
 def automatizar_poder_judicial(page, username, password):
     try:
         print("\n=== INICIANDO AUTOMATIZACIÓN DEL PODER JUDICIAL ===\n")
@@ -2080,7 +2082,7 @@ def automatizar_poder_judicial(page, username, password):
         return False
 
 
-
+#Cuerpo del correo electrónico
 def construir_cuerpo_html(movimientos):
     if not movimientos:
         return """
@@ -2169,8 +2171,9 @@ def construir_cuerpo_html(movimientos):
     """
     return html
 
+#Envía un correo electrónico con archivos adjuntos
 def enviar_correo(movimientos=None, asunto="Notificación de Sistema de Poder Judicial"):
-    """Envía un correo electrónico con archivos adjuntos"""
+
     try:
         # Verificar credenciales
         if not all([EMAIL_SENDER, EMAIL_PASSWORD, EMAIL_RECIPIENTS]):
@@ -2252,6 +2255,7 @@ def enviar_correo(movimientos=None, asunto="Notificación de Sistema de Poder Ju
         logging.error(f"Error general en envío de correo: {str(e)}")
         return False
 
+#flujo principal del script
 def main():
     # Verificar si es fin de semana
     today = datetime.datetime.now()
