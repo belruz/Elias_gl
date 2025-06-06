@@ -411,7 +411,7 @@ class ControladorLupa:
                     if len(tds) < 4:
                         continue
                     # Usar la columna 4 (índice 3) para el caratulado
-                    caratulado = tds[3].inner_text().strip().replace('/', '_')
+                    caratulado = tds[3].inner_text().strip()
                     print(f"  Procesando lupa {idx+1} de {len(lupas)} (caratulado: {caratulado})")
                     
                     lupa_link.scroll_into_view_if_needed()
@@ -893,7 +893,7 @@ class ControladorLupaSuprema(ControladorLupa):
                     tds = fila.query_selector_all('td')
                     if len(tds) < 3:
                         continue
-                    caratulado = tds[2].inner_text().strip().replace('/', '_')
+                    caratulado = tds[2].inner_text().strip()
                     print(f"  Procesando lupa {idx+1} de {len(lupas)} (caratulado: {caratulado})")
                     
                     lupa_link.scroll_into_view_if_needed()
@@ -1065,7 +1065,7 @@ class ControladorLupaApelacionesPrincipal(ControladorLupa):
                     if len(tds) < 4:
                         continue
                     # Usar la columna 4 (índice 3) para el caratulado
-                    caratulado = tds[3].inner_text().strip().replace('/', '_')
+                    caratulado = tds[3].inner_text().strip()
                     print(f"  Procesando lupa {idx+1} de {len(lupas)} (caratulado: {caratulado})")
                     
                     lupa_link.scroll_into_view_if_needed()
@@ -2056,7 +2056,7 @@ def automatizar_poder_judicial(page, username, password):
                 for idx, movimiento in enumerate(MOVIMIENTOS_GLOBALES, 1):
                     print(f"\nMovimiento {idx}:")
                     print(f"  Folio: {movimiento.folio}")
-                    print(f"  Sección: {movimiento.seccion}")
+                    print(f"  Instancia: {movimiento.seccion}")
                     print(f"  Caratulado: {movimiento.caratulado}")
                     print(f"  N° Causa: {movimiento.numero_causa}")
                     print(f"  Fecha: {movimiento.fecha}")
@@ -2125,7 +2125,7 @@ def construir_cuerpo_html(movimientos):
             <div class="movimiento">
                 <h3>Movimiento {i}:</h3>
                 <ul>
-                    <li><strong>Sección:</strong> {mov.seccion}</li>
+                    <li><strong>Instancia:</strong> {mov.seccion}</li>
                     <li><strong>N° Causa:</strong> {mov.numero_causa}</li>
                     <li><strong>Caratulado:</strong> {mov.caratulado}</li>"""
 
