@@ -61,12 +61,14 @@ USER_AGENTS = [
 ]
 
 class MovimientoPJUD:
-    def __init__(self, folio, seccion, caratulado, numero_causa, fecha, pdf_path=None, cuaderno=None, archivos_apelaciones=None, historia_causa_cuaderno=None):
+    def __init__(self, folio, seccion, caratulado, fecha, libro=None, rit=None, rol=None, pdf_path=None, cuaderno=None, archivos_apelaciones=None, historia_causa_cuaderno=None):
         self.folio = folio
         self.seccion = seccion
         self.caratulado = caratulado
-        self.numero_causa = numero_causa
         self.fecha = fecha
+        self.libro = libro
+        self.rit = rit
+        self.rol = rol
         self.pdf_path = pdf_path 
         self.cuaderno = cuaderno
         self.archivos_apelaciones = archivos_apelaciones or []  # Lista de archivos de apelaciones para corte suprema
@@ -83,8 +85,10 @@ class MovimientoPJUD:
             'folio': self.folio,
             'seccion': self.seccion,
             'caratulado': self.caratulado,
-            'numero_causa': self.numero_causa,
             'fecha': self.fecha,
+            'libro': self.libro,
+            'rit': self.rit,
+            'rol': self.rol,
             'pdf_path': self.pdf_path,
             'cuaderno': self.cuaderno,
             'archivos_apelaciones': self.archivos_apelaciones,
@@ -97,9 +101,16 @@ class MovimientoPJUD:
         return (self.folio == other.folio and 
                 self.seccion == other.seccion and 
                 self.caratulado == other.caratulado and 
-                self.numero_causa == other.numero_causa and 
                 self.fecha == other.fecha and
+                self.libro == other.libro and
+                self.rit == other.rit and
+                self.rol == other.rol and
                 self.cuaderno == other.cuaderno)
+    
+    @property
+    def identificador_causa(self):
+        # Devuelve el primer identificador disponible
+        return self.rol or self.rit or self.libro
 
 # Lista global para almacenar todos los movimientos nuevos
 MOVIMIENTOS_GLOBALES = []
@@ -322,13 +333,12 @@ def verificar_movimientos_nuevos(page, tab_name):
             panel.screenshot(path=detalle_panel_path)
             print(f"[INFO] Captura del panel de información guardada: {detalle_panel_path}")
             try:
-                libro_td = panel.query_selector("td:has-text('Libro')")
+                libro_td = panel.query_selector("td:has-text('libro')")
+                #Extrae el texto completo dle Libro
                 if libro_td:
                     libro_text = libro_td.inner_text()
-                    match = re.search(r"/\s*(\d+)", libro_text)
-                    if match:
-                        numero_causa = match.group(1)
-                        print(f"[INFO] Número de causa extraído: {numero_causa}")
+                    print(f"[INFO] Texto completo del libro extraído: {libro_text}")
+                    
                 fecha_causa = panel.query_selector("td:has-text('Fecha')").inner_text().split(":")[1].strip()
             except Exception as e:
                 print(f"[WARN] No se pudo extraer toda la información del panel: {str(e)}")
@@ -351,14 +361,15 @@ def verificar_movimientos_nuevos(page, tab_name):
                     pdf_form = movimiento.query_selector("form[name='frmPdf']")
                     if pdf_form:
                         # Extraer número de causa si no se ha hecho antes
-                        if numero_causa is None:
-                            libro_td = panel.query_selector("td:has-text('Libro')")
+                        try:
+                            libro_td = panel.query_selector("td:has-text('libro')")
                             if libro_td:
                                 libro_text = libro_td.inner_text()
-                                match = re.search(r"/\s*(\d+)", libro_text)
-                                if match:
-                                    numero_causa = match.group(1)
-                                    print(f"[INFO] Número de causa extraído: {numero_causa}")
+                                print(f"[INFO] Texto completo del libro extraído: {libro_text}")
+                                
+                        except Exception as e:
+                            print(f"[WARN] No se pudo extraer toda la información del panel: {str(e)}")
+
                         print(f"[INFO] Captura del panel de información guardada: {detalle_panel_path}")
                         token = pdf_form.query_selector("input[name='valorFile']").get_attribute("value")
                         causa_str = f"Causa_{numero_causa}_" if numero_causa else ""
@@ -538,13 +549,12 @@ class ControladorLupa:
                 panel.scroll_into_view_if_needed()
                 random_sleep(1, 2)
                 try:
-                    libro_td = panel.query_selector("td:has-text('Libro')")
+                    libro_td = panel.query_selector("td:has-text('libro')")
                     if libro_td:
                         libro_text = libro_td.inner_text()
-                        match = re.search(r"/\s*(\d+)", libro_text)
-                        if match:
-                            numero_causa = match.group(1)
-                            print(f"[INFO] Número de causa extraído: {numero_causa}")
+                        print(f"[INFO] Texto completo del libro extraído: {libro_text}")
+                        
+                    fecha_causa = panel.query_selector("td:has-text('Fecha')").inner_text().split(":")[1].strip()
                 except Exception as e:
                     print(f"[WARN] No se pudo extraer toda la información del panel: {str(e)}")
             else:
@@ -612,7 +622,7 @@ class ControladorLupa:
                             folio=folio,
                             seccion=tab_name,
                             caratulado=caratulado,
-                            numero_causa=numero_causa,
+                            libro=libro_td,
                             fecha=fecha_tramite_str,
                             pdf_path=pdf_path
                         )
@@ -690,13 +700,10 @@ class ControladorLupa:
             try:
                 panel_titulos = self.page.query_selector("#modalDetalleApelaciones table.table-titulos")
                 if panel_titulos:
-                    libro_td = panel_titulos.query_selector("td:has-text('Libro')")
+                    libro_td = panel_titulos.query_selector("td:has-text('libro')")
                     if libro_td:
                         libro_text = libro_td.inner_text()
-                        match = re.search(r"/\s*(\d+)", libro_text)
-                        if match:
-                            numero_causa = match.group(1)
-                            print(f"  Número de causa extraído: {numero_causa}")
+                        print(f"  Texto completo del libro extraído: {libro_text}")
             except Exception as e:
                 print(f"  No se pudo extraer el número de causa: {str(e)}")
             
@@ -882,15 +889,12 @@ class ControladorLupaSuprema(ControladorLupa):
                     if panel:
                         # Extraer el número de causa del Libro
                         try:
-                            libro_td = panel.query_selector("td:has-text('Libro')")
+                            libro_td = panel.query_selector("td:has-text('libro')")
                             if libro_td:
                                 libro_text = libro_td.inner_text()
-                                match = re.search(r'Protección\s*-\s*(\d+)', libro_text)
-                                if match:
-                                    numero_causa = match.group(1)
-                                    print(f"[INFO] Número de causa extraído: {numero_causa}")
+                                print(f"  Texto completo del libro extraído: {libro_text}")
                         except Exception as e:
-                            print(f"[WARN] No se pudo extraer el número de causa: {str(e)}")
+                            print(f"  No se pudo extraer el número de causa: {str(e)}")
                         
                         # Hacer scroll al panel
                         self.page.evaluate("""
@@ -979,15 +983,12 @@ class ControladorLupaSuprema(ControladorLupa):
                 random_sleep(1, 2)
                 try:
                     # Buscar el número de causa en el panel completo
-                    libro_td = panel.query_selector("td:has-text('Libro')")
+                    libro_td = panel.query_selector("td:has-text('libro')")
                     if libro_td:
                         libro_text = libro_td.inner_text()
-                        match = re.search(r"/\s*(\d+)", libro_text)
-                        if match:
-                            numero_causa = match.group(1)
-                            print(f"[INFO] Número de causa extraído: {numero_causa}")
+                        print(f"[INFO] Texto completo del libro extraído: {libro_text}")
                 except Exception as e:
-                    print(f"[WARN] No se pudo extraer toda la información del panel: {str(e)}")
+                    print(f"[WARN] No se pudo extraer el número de causa: {str(e)}")
             else:
                 print("[WARN] No se encontró el panel de información")
             self.page.wait_for_selector("table.table-bordered", timeout=10000)
@@ -1083,7 +1084,7 @@ class ControladorLupaSuprema(ControladorLupa):
                             folio=folio,
                             seccion=tab_name,
                             caratulado=caratulado,
-                            numero_causa=numero_causa,
+                            libro=libro_text,
                             fecha=fecha_tramite_str,
                             pdf_path=pdf_path
                         )
@@ -1212,17 +1213,14 @@ class ControladorLupaApelacionesPrincipal(ControladorLupa):
                 try:
                     panel.scroll_into_view_if_needed()
                     random_sleep(1, 2)
+                                            # Extraer el número de causa del Libro
                     try:
-                        libro_td = panel.query_selector("td:has-text('Libro')")
+                        libro_td = panel.query_selector("td:has-text('libro')")
                         if libro_td:
                             libro_text = libro_td.inner_text()
-                            # Modificar la expresión regular para extraer el número después del guion de Protección
-                            match = re.search(r'Protección\s*-\s*(\d+)', libro_text)
-                            if match:
-                                numero_causa = match.group(1)
-                                print(f"[INFO] Número de causa extraído: {numero_causa}")
+                            print(f"  Texto completo del libro extraído: {libro_text}")
                     except Exception as e:
-                        print(f"[WARN] No se pudo extraer toda la información del panel: {str(e)}")
+                            print(f"  No se pudo extraer el número de causa: {str(e)}")
                 except Exception as scroll_error:
                     print(f"[WARN] No se pudo hacer scroll al panel: {str(scroll_error)}")
                     return False
@@ -1310,7 +1308,7 @@ class ControladorLupaApelacionesPrincipal(ControladorLupa):
                             folio=folio,
                             seccion=tab_name,
                             caratulado=caratulado,
-                            numero_causa=numero_causa,
+                            libro=libro_text,
                             fecha=fecha_tramite_str,
                             pdf_path=pdf_path
                         )
@@ -1458,16 +1456,10 @@ class ControladorLupaCivil(ControladorLupa):
                                 rol_td = panel.query_selector("td:has-text('ROL:')")
                                 if rol_td:
                                     rol_text = rol_td.inner_text()
-                                    match = re.search(r"ROL:\s*C-(\d+)-", rol_text)
-                                    if match:
-                                        numero_causa = match.group(1)
-                                        print(f"[INFO] Número de causa extraído: {numero_causa}")
-                                    else:
-                                        print(f"[WARN] No se pudo extraer el número de causa del ROL: {rol_text}")
-                                else:
-                                    print("[WARN] No se encontró el campo ROL en el panel de detalle")
+                                    print(f"[INFO] Texto completo del ROL extraído: {rol_text}")
                             except Exception as rol_error:
                                 print(f"[WARN] Error extrayendo el número de causa del ROL: {str(rol_error)}")
+
                             # Intentar hacer scroll 
                             self.page.evaluate("""
                                 (element) => {
@@ -1577,7 +1569,7 @@ class ControladorLupaCivil(ControladorLupa):
                                     folio=folio,
                                     seccion=tab_name,
                                     caratulado=caratulado,
-                                    numero_causa=numero_causa,
+                                    rol=rol_text,
                                     fecha=fecha_tramite_str,
                                     pdf_path=pdf_path,
                                     cuaderno=texto,  # Agregamos el nombre del cuaderno
@@ -1815,14 +1807,8 @@ class ControladorLupaCobranza(ControladorLupa):
                                 rit_td = panel.query_selector("td:has-text('RIT')")
                                 if rit_td:
                                     rit_text = rit_td.inner_text()
-                                    match = re.search(r'D-(\d+)-', rit_text)
-                                    if match:
-                                        numero_causa = match.group(1)
-                                        print(f"[INFO] Número de causa extraído: {numero_causa}")
-                                    else:
-                                        print(f"[WARN] No se pudo extraer el número de causa del RIT: {rit_text}")
-                                else:
-                                    print("[WARN] No se encontró el campo RIT en el panel de detalle")
+                                    print(f"[INFO] Texto completo del RIT extraído: {rit_text}")
+
                             except Exception as rit_error:
                                 print(f"[WARN] Error extrayendo el número de causa del RIT: {str(rit_error)}")
                             
@@ -1906,7 +1892,7 @@ class ControladorLupaCobranza(ControladorLupa):
                                     folio=folio,
                                     seccion=tab_name,
                                     caratulado=caratulado,
-                                    numero_causa=numero_causa,
+                                    rit=rit_text,
                                     fecha=fecha_tramite_str,
                                     pdf_path=pdf_path,
                                     cuaderno=texto,  # Agregamos el nombre del cuaderno
@@ -2172,7 +2158,7 @@ def automatizar_poder_judicial(page, username, password):
                     print(f"  Folio: {movimiento.folio}")
                     print(f"  Instancia: {movimiento.seccion}")
                     print(f"  Caratulado: {movimiento.caratulado}")
-                    print(f"  N° Causa: {movimiento.numero_causa}")
+                    print(f"  {movimiento.identificador_causa or 'No disponible'}")
                     print(f"  Fecha: {movimiento.fecha}")
                     print(f"  PDF: {'Sí' if movimiento.tiene_pdf() else 'No'}")
                     if movimiento.tiene_pdf():
@@ -2213,76 +2199,76 @@ def construir_cuerpo_html(movimientos):
             </body>
             </html>
             """
+    else:
+        html = """
+        <html>
+        <head>
+            <style>
+                body { font-family: Arial, sans-serif; }
+                .container { max-width: 800px; margin: 0 auto; padding: 20px; }
+                .movimiento { margin-bottom: 30px; }
+                .movimiento h3 { color: #333; margin-top: 0; }
+                .movimiento ul { list-style-type: none; padding-left: 0; }
+                .movimiento li { margin-bottom: 10px; }
+                .movimiento strong { color: #555; }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <p>Estimado,</p>
+                <p>Junto con saludar y esperando que se encuentre muy bien, envío movimientos nuevos en el Poder Judicial y su PDF asociado.</p>
+                <p>Detalle de documentos:</p>
+        """
 
-    html = """
-    <html>
-    <head>
-        <style>
-            body { font-family: Arial, sans-serif; }
-            .container { max-width: 800px; margin: 0 auto; padding: 20px; }
-            .movimiento { margin-bottom: 30px; }
-            .movimiento h3 { color: #333; margin-top: 0; }
-            .movimiento ul { list-style-type: none; padding-left: 0; }
-            .movimiento li { margin-bottom: 10px; }
-            .movimiento strong { color: #555; }
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <p>Estimado,</p>
-            <p>Junto con saludar y esperando que se encuentre muy bien, envío movimientos nuevos en el Poder Judicial y su PDF asociado.</p>
-            <p>Detalle de documentos:</p>
-    """
-
-    for i, mov in enumerate(movimientos, 1):
-        html += f"""
-            <div class="movimiento">
-                <h3>Movimiento {i}:</h3>
-                <ul>
-                    <li><strong>Instancia:</strong> {mov.seccion}</li>
-                    <li><strong>N° Causa:</strong> {mov.numero_causa}</li>
-                    <li><strong>Caratulado:</strong> {mov.caratulado}</li>"""
-
-        if mov.historia_causa_cuaderno:
+        for i, mov in enumerate(movimientos, 1):
             html += f"""
-                    <li><strong>Historia Causa Cuaderno:</strong> {mov.historia_causa_cuaderno}</li>"""
+                <div class="movimiento">
+                    <h3>Movimiento {i}:</h3>
+                    <ul>
+                        <li>Instancia: {mov.seccion}</li>
+                        <li>{mov.identificador_causa or 'No disponible'}</li>
+                        <li>Caratulado: {mov.caratulado}</li>"""
 
-        html += f"""
-                    <li><strong>Fecha Trámite:</strong> {mov.fecha}</li>
-                    <li><strong>Documento:</strong> {os.path.basename(mov.pdf_path) if mov.pdf_path else 'No disponible'}</li>"""
-
-        # Agregar Detalle Causa
-        #if mov.seccion == "Corte Suprema":
-        #    html += f"""
-        #            <li><strong>Detalle Causa:</strong> Detalle_causa_{mov.numero_causa}.png</li>"""
-        #elif mov.seccion == "Civil":
-         #   html += f"""
-          #          <li><strong>Detalle Causa:</strong> Detalle_causa_{mov.numero_causa}_Cuaderno_{mov.historia_causa_cuaderno}.png</li>"""
-        #elif mov.seccion == "Cobranza":
-        #    html += f"""
-        #            <li><strong>Detalle Causa:</strong> Detalle_causa_{mov.numero_causa}_Cuaderno_{mov.historia_causa_cuaderno}.png</li>"""
-
-        # Agregar sección de Apelaciones si existe
-        if mov.archivos_apelaciones:
-            html += """
-                    <li><strong>Apelaciones:</strong>
-                        <ul>
-                            <li>Archivos
-                                <ul>"""
-            for archivo in mov.archivos_apelaciones:
+            if mov.historia_causa_cuaderno:
                 html += f"""
-                                    <li>{os.path.basename(archivo)}</li>"""
+                        <li>Historia Causa Cuaderno: {mov.historia_causa_cuaderno}</li>"""
 
+            html += f"""
+                        <li>Fecha Trámite: {mov.fecha}</li>
+                        <li>Documento: {os.path.basename(mov.pdf_path) if mov.pdf_path else 'No disponible'}</li>"""
+
+            # Agregar Detalle Causa
+            #if mov.seccion == "Corte Suprema":
+            #    html += f"""
+            #            <li>Detalle Causa:Detalle_causa_{mov.numero_causa}.png</li>"""
+            #elif mov.seccion == "Civil":
+            #   html += f"""
+            #          <li>Detalle Causa: Detalle_causa_{mov.numero_causa}_Cuaderno_{mov.historia_causa_cuaderno}.png</li>"""
+            #elif mov.seccion == "Cobranza":
+            #    html += f"""
+            #            <li>Detalle Causa: Detalle_causa_{mov.numero_causa}_Cuaderno_{mov.historia_causa_cuaderno}.png</li>"""
+
+            # Agregar sección de Apelaciones si existe
+            if mov.archivos_apelaciones:
+                html += """
+                        <li><strong>Apelaciones:</strong>
+                            <ul>
+                                <li>Archivos
+                                    <ul>"""
+                for archivo in mov.archivos_apelaciones:
+                    html += f"""
+                                        <li>{os.path.basename(archivo)}</li>"""
+
+
+            html += """
+                    </ul>
+                </div>"""
 
         html += """
-                </ul>
-            </div>"""
-
-    html += """
-        </div>
-    </body>
-    </html>
-    """
+            </div>
+        </body>
+        </html>
+        """
     return html
 
 #Envía un correo electrónico con archivos adjuntos
@@ -2300,51 +2286,35 @@ def enviar_correo(movimientos=None, asunto="Notificación de Sistema de Poder Ju
         msg['To'] = ", ".join(EMAIL_RECIPIENTS)
         msg['Subject'] = asunto
         
-        # Si no hay movimientos, enviar mensaje HTML simple
-        if not movimientos:
-            html = """
-            <html>
-            <head>
-                <style>
-                    body { font-family: Arial, sans-serif; }
-                </style>
-            </head>
-            <body>
-                <p>Estimado,</p>
-                <p>Junto con saludar y esperando que se encuentre muy bien, le informo que no se encontraron nuevos movimientos para reportar en el Poder Judicial.</p>
-                <p>Saludos cordiales</p>
-            </body>
-            </html>
-            """
-            msg.attach(MIMEText(html, 'html'))
-        else:
+
+        
             # Construir cuerpo HTML con los movimientos
-            html_cuerpo = construir_cuerpo_html(movimientos)
-            if html_cuerpo:
-                msg.attach(MIMEText(html_cuerpo, 'html'))
+        html_cuerpo = construir_cuerpo_html(movimientos)
+        if html_cuerpo:
+            msg.attach(MIMEText(html_cuerpo, 'html'))
             
-            # Adjuntar PDFs y archivos de apelaciones
-            for movimiento in movimientos:
-                # Adjuntar PDF principal si existe
-                if movimiento.tiene_pdf():
+        # Adjuntar PDFs y archivos de apelaciones
+        for movimiento in movimientos:
+            # Adjuntar PDF principal si existe
+            if movimiento.tiene_pdf():
+                try:
+                    with open(movimiento.pdf_path, 'rb') as f:
+                        part = MIMEApplication(f.read(), Name=os.path.basename(movimiento.pdf_path))
+                        part['Content-Disposition'] = f'attachment; filename="{os.path.basename(movimiento.pdf_path)}"'
+                        msg.attach(part)
+                except Exception as e:
+                    logging.error(f"Error adjuntando archivo {movimiento.pdf_path}: {str(e)}")
+                
+            # Adjuntar archivos de apelaciones si existen
+            if movimiento.archivos_apelaciones:
+                for archivo_apelacion in movimiento.archivos_apelaciones:
                     try:
-                        with open(movimiento.pdf_path, 'rb') as f:
-                            part = MIMEApplication(f.read(), Name=os.path.basename(movimiento.pdf_path))
-                            part['Content-Disposition'] = f'attachment; filename="{os.path.basename(movimiento.pdf_path)}"'
+                        with open(archivo_apelacion, 'rb') as f:
+                            part = MIMEApplication(f.read(), Name=os.path.basename(archivo_apelacion))
+                            part['Content-Disposition'] = f'attachment; filename="{os.path.basename(archivo_apelacion)}"'
                             msg.attach(part)
                     except Exception as e:
-                        logging.error(f"Error adjuntando archivo {movimiento.pdf_path}: {str(e)}")
-                
-                 # Adjuntar archivos de apelaciones si existen
-                if movimiento.archivos_apelaciones:
-                    for archivo_apelacion in movimiento.archivos_apelaciones:
-                        try:
-                            with open(archivo_apelacion, 'rb') as f:
-                                part = MIMEApplication(f.read(), Name=os.path.basename(archivo_apelacion))
-                                part['Content-Disposition'] = f'attachment; filename="{os.path.basename(archivo_apelacion)}"'
-                                msg.attach(part)
-                        except Exception as e:
-                            logging.error(f"Error adjuntando archivo de apelación {archivo_apelacion}: {str(e)}")
+                        logging.error(f"Error adjuntando archivo de apelación {archivo_apelacion}: {str(e)}")
             
         
         # Enviar correo con reintentos
@@ -2375,9 +2345,9 @@ def main():
     today = datetime.datetime.now()
     is_weekend = today.weekday() >= 5  # 5 = sábado, 6 = domingo
 
-    if is_weekend:
-        logging.info("Hoy es fin de semana. No se realizan tareas.")
-        return
+    #if is_weekend:
+     #   logging.info("Hoy es fin de semana. No se realizan tareas.")
+      #  return
 
     # Obtiene las variables de entorno
     USERNAME = os.getenv("RUT")
