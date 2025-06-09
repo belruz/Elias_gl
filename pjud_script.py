@@ -6,6 +6,7 @@ from email.mime.text import MIMEText
 from email.mime.application import MIMEApplication
 from pathlib import Path
 from pdf2image import convert_from_path
+import PyPDF2
 
 #Carga del env  
 dotenv_path = Path(__file__).parent / '.env'
@@ -312,104 +313,28 @@ def descargar_pdf_directo(pdf_url, pdf_filename, page):
     except Exception as e:
         print(f"[ERROR] Error general al descargar el PDF: {str(e)}")
         return False
+    
+#Elimina caracteres no válidos para nombres de archivo en Windows
+def limpiar_nombre_archivo(nombre):
+    """Elimina caracteres no válidos para nombres de archivo en Windows."""
+    return re.sub(r'[<>:"/\\|?*\n\r\t]', '', nombre)
 
-def verificar_movimientos_nuevos(page, tab_name):
+#Extrae un resumen del PDF (primeras 10 palabras del primer texto encontrado)
+def extraer_resumen_pdf(pdf_path):
     try:
-        print(f"[INFO] Verificando movimientos nuevos en pestaña '{tab_name}'...")
-        page.wait_for_selector("table.table-titulos", timeout=10000)
-        
-        # reemplazar espacios con guiones bajos para el nombre de la carpeta
-        pdf_dir = tab_name.replace(' ', '_')
-        
-        if not os.path.exists(pdf_dir):
-            os.makedirs(pdf_dir)
-        #Saca screenshot del panel de información
-        panel = page.query_selector("table.table-titulos")
-        numero_causa = None
-        if panel:
-            panel.scroll_into_view_if_needed()
-            random_sleep(1, 2)
-            detalle_panel_path = f"{pdf_dir}/Detalle_causa_{numero_causa}.png" if numero_causa else f"{pdf_dir}/Detalle_causa.png"
-            panel.screenshot(path=detalle_panel_path)
-            print(f"[INFO] Captura del panel de información guardada: {detalle_panel_path}")
-            try:
-                libro_td = panel.query_selector("td:has-text('libro')")
-                #Extrae el texto completo dle Libro
-                if libro_td:
-                    libro_text = libro_td.inner_text()
-                    print(f"[INFO] Texto completo del libro extraído: {libro_text}")
-                    
-                fecha_causa = panel.query_selector("td:has-text('Fecha')").inner_text().split(":")[1].strip()
-            except Exception as e:
-                print(f"[WARN] No se pudo extraer toda la información del panel: {str(e)}")
-        else:
-            print("[WARN] No se encontró el panel de información")
-        page.wait_for_selector("table.table-bordered", timeout=10000)
-
-        # Fecha fija para pruebas
-        fecha_actual_str = "01/12/2022" 
-
-        print(f"[INFO] Verificando movimientos del día: {fecha_actual_str}")
-        movimientos = page.query_selector_all("table.table-bordered tbody tr")
-        print(f"[INFO] Se encontraron {len(movimientos)} movimientos")
-        for movimiento in movimientos:
-            try:
-                folio = movimiento.query_selector("td:nth-child(1)").inner_text().strip()
-                fecha_tramite_str = movimiento.query_selector("td:nth-child(5)").inner_text().strip()
-                if fecha_tramite_str == fecha_actual_str:
-                    print(f"[INFO] Movimiento nuevo encontrado - Folio: {folio}, Fecha: {fecha_tramite_str}")
-                    pdf_form = movimiento.query_selector("form[name='frmPdf']")
-                    if pdf_form:
-                        # Extraer número de causa si no se ha hecho antes
-                        try:
-                            libro_td = panel.query_selector("td:has-text('libro')")
-                            if libro_td:
-                                libro_text = libro_td.inner_text()
-                                print(f"[INFO] Texto completo del libro extraído: {libro_text}")
-                                
-                        except Exception as e:
-                            print(f"[WARN] No se pudo extraer toda la información del panel: {str(e)}")
-
-                        print(f"[INFO] Captura del panel de información guardada: {detalle_panel_path}")
-                        token = pdf_form.query_selector("input[name='valorFile']").get_attribute("value")
-                        causa_str = f"Causa_{numero_causa}_" if numero_causa else ""
-                        pdf_filename = f"{pdf_dir}/{causa_str}folio_{folio}_fecha_{fecha_tramite_str.replace('/', '_')}.pdf"
-                        preview_path = pdf_filename.replace('.pdf', '_preview.png')
-
-
-                        original_url = None
-                        if token:
-                            base_url = "https://oficinajudicialvirtual.pjud.cl/misCausas/suprema/documentos/docCausaSuprema.php?valorFile="
-                            original_url = base_url + token
-                        if original_url:
-                            print(f"[INFO] Descargando PDF usando la URL extraída del HTML...")
-                            pdf_descargado = descargar_pdf_directo(original_url, pdf_filename, page)
-
-                            # Generar una vista previa del PDF (primera página como imagen)Add commentMore actions
-                            if pdf_descargado:
-                                try:
-                                    print(f"[INFO] Generando vista previa del PDF para {pdf_filename}...")
-                                    # Convertir la primera página del PDF a imagen
-                                    images = convert_from_path(pdf_filename, first_page=1, last_page=1)
-                                    if images and len(images) > 0:
-                                        # Guardar solo la primera página como imagen
-                                        images[0].save(preview_path, 'PNG')
-                                        print(f"[INFO] Vista previa guardada en: {preview_path}")
-                                    else:
-                                        print(f"[WARN] No se pudo generar la vista previa para {pdf_filename}")
-                                except Exception as prev_error:
-                                    print(f"[ERROR] Error al generar la vista previa del PDF: {str(prev_error)}")
-
-                    else:
-                        print(f"[WARN] No hay PDF disponible para el movimiento {folio}")
-            except Exception as e:
-                print(f"[ERROR] Error procesando movimiento: {str(e)}")
-                continue
-        return True
+        with open(pdf_path, "rb") as f:
+            reader = PyPDF2.PdfReader(f)
+            if len(reader.pages) > 0:
+                text = reader.pages[0].extract_text()
+                if text:
+                    palabras = text.strip().split()
+                    resumen = " ".join(palabras[:10])
+                    return resumen if resumen else "sin_resumen"
+        return "sin_resumen"
     except Exception as e:
-        print(f"[ERROR] Error al verificar movimientos nuevos: {str(e)}")
-        return False
-
+        print(f"[ERROR] No se pudo extraer resumen del PDF: {e}")
+        return "sin_resumen"
+    
 #Lupa es lo mismo que decir causa
 class ControladorLupa:
     def __init__(self, page):
@@ -554,6 +479,12 @@ class ControladorLupa:
                         libro_text = libro_td.inner_text()
                         print(f"[INFO] Texto completo del libro extraído: {libro_text}")
                         
+                        #Modificacion para nombre pdf
+                        libro_pdf = libro_text.replace(f"Libro :", "").strip().replace("/", "").replace("-", "") 
+
+                        #modificacion para titulo correo
+                        libro_titulo = libro_text.replace(f"Libro :", "").strip().replace("/", "-")
+
                     fecha_causa = panel.query_selector("td:has-text('Fecha')").inner_text().split(":")[1].strip()
                 except Exception as e:
                     print(f"[WARN] No se pudo extraer toda la información del panel: {str(e)}")
@@ -567,6 +498,8 @@ class ControladorLupa:
                 try:
                     folio = movimiento.query_selector("td:nth-child(1)").inner_text().strip()
                     fecha_tramite_str = movimiento.query_selector("td:nth-child(5)").inner_text().strip()
+                    fecha_tramite_pdf = fecha_tramite_str[6:10] + fecha_tramite_str[3:5] + fecha_tramite_str[0:2]
+                    
                     if fecha_tramite_str == "01/12/2022":
                         movimientos_nuevos = True
                         carpeta_general = tab_name.replace(' ', '_')
@@ -585,38 +518,45 @@ class ControladorLupa:
                                 panel.screenshot(path=detalle_panel_path)
                                 print(f"[INFO] Captura del panel de información guardada: {detalle_panel_path}")
                         pdf_form = movimiento.query_selector("form[name='frmPdf']")
+                        pdf_path = None
                         if pdf_form:
                             token = pdf_form.query_selector("input[name='valorFile']").get_attribute("value")
                             causa_str = f"Causa_{numero_causa}_" if numero_causa else ""
-                            pdf_filename = f"{carpeta_caratulado}/{causa_str}folio_{folio}_fecha_{fecha_tramite_str.replace('/', '_')}.pdf"
-
-                            preview_path = pdf_filename.replace('.pdf', '_preview.png')
+                            # Nombre temporal antes de tener el resumen
+                            pdf_filename_tmp = f"{carpeta_caratulado}/{fecha_tramite_pdf} {libro_pdf} temp.pdf"
+                            preview_path = pdf_filename_tmp.replace('.pdf', '_preview.png')
 
                             if token:
                                 base_url = "https://oficinajudicialvirtual.pjud.cl/misCausas/suprema/documentos/docCausaSuprema.php?valorFile="
                                 original_url = base_url + token
-                                pdf_descargado = descargar_pdf_directo(original_url, pdf_filename, self.page)
-                                if pdf_descargado:
-                                    pdf_path = pdf_filename
-                                    try:
-                                        # Verificar si la vista previa ya existe
-                                        if os.path.exists(preview_path):
-                                            print(f"[INFO] La vista previa {preview_path} ya existe. No se generará nuevamente.")
-                                        else:
+                                try:
+                                    pdf_descargado = descargar_pdf_directo(original_url, pdf_filename_tmp, self.page)
+                                    if pdf_descargado:                                        
+                                        resumen_pdf = extraer_resumen_pdf(pdf_filename_tmp)
+                                        resumen_pdf_limpio = limpiar_nombre_archivo(resumen_pdf)
+                                        # Nombre final
+                                        pdf_filename = f"{carpeta_caratulado}/{fecha_tramite_pdf}_{libro_pdf}_{resumen_pdf_limpio}.pdf"
+                                        # Renombrar el archivo temporal al nombre final
+                                        os.rename(pdf_filename_tmp, pdf_filename)
+                                        pdf_path = pdf_filename
+                                        preview_path = pdf_filename.replace('.pdf', '_preview.png')
+
+                                        # Generar preview si no existe
+                                        if not os.path.exists(preview_path):
                                             print(f"[INFO] Generando vista previa del PDF para {pdf_filename}...")
-                                            # Convertir la primera página del PDF a imagen
                                             images = convert_from_path(pdf_filename, first_page=1, last_page=1)
                                             if images and len(images) > 0:
-                                                # Guardar solo la primera página como imagen
                                                 images[0].save(preview_path, 'PNG')
                                                 print(f"[INFO] Vista previa guardada en: {preview_path}")
                                             else:
                                                 print(f"[WARN] No se pudo generar la vista previa para {pdf_filename}")
-                                    except Exception as prev_error:
-                                        print(f"[ERROR] Error al generar la vista previa del PDF: {str(prev_error)}")
+                                    else:
+                                        print(f"[ERROR] No se pudo descargar el PDF para folio {folio}")
+                                except Exception as e:
+                                    print(f"[ERROR] Error descargando PDF para folio {folio}, causa {numero_causa}: {e}")
                         else:
                             print(f"[WARN] No hay PDF disponible para el movimiento {folio}")
-                        
+                                                
                         # Crear y agregar el movimiento a la lista global usando la nueva función
                         movimiento_pjud = MovimientoPJUD(
                             folio=folio,
