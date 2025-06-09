@@ -12,7 +12,7 @@ import PyPDF2
 dotenv_path = Path(__file__).parent / '.env'
 load_dotenv(dotenv_path=dotenv_path, override=True)
 
-# Configuración del logging
+# Configuración del logging de errores
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
@@ -116,8 +116,8 @@ class MovimientoPJUD:
 # Lista global para almacenar todos los movimientos nuevos
 MOVIMIENTOS_GLOBALES = []
 
+# Función para agregar un movimiento sin duplicar
 def agregar_movimiento_sin_duplicar(movimiento):
-    """Agrega un movimiento a la lista global si no existe ya"""
     if not any(m == movimiento for m in MOVIMIENTOS_GLOBALES):
         MOVIMIENTOS_GLOBALES.append(movimiento)
         return True
@@ -319,7 +319,7 @@ def limpiar_nombre_archivo(nombre):
     """Elimina caracteres no válidos para nombres de archivo en Windows."""
     return re.sub(r'[<>:"/\\|?*\n\r\t]', '', nombre)
 
-#Extrae un resumen del PDF (primeras 10 palabras del primer texto encontrado)
+#Extrae un resumen del PDF (primeras 15 palabras del primer texto encontrado)
 def extraer_resumen_pdf(pdf_path):
     try:
         with open(pdf_path, "rb") as f:
@@ -335,7 +335,8 @@ def extraer_resumen_pdf(pdf_path):
         print(f"[ERROR] No se pudo extraer resumen del PDF: {e}")
         return "sin_resumen"
     
-#Lupa es lo mismo que decir causa
+#Lupa se refiere a el icon de lupa para abrir cada causa 
+#esta es la clase base o general para los controladores de lupas
 class ControladorLupa:
     def __init__(self, page):
         self.page = page
@@ -782,6 +783,7 @@ class ControladorLupa:
             print(f"  Error al verificar movimientos en modal de Apelaciones: {str(e)}")
             return []
 
+#Aqui se maneja la navegacion en la pestaña Corte Suprema de Mis Causas
 class ControladorLupaSuprema(ControladorLupa):
     def obtener_config(self):
         return {
@@ -1046,6 +1048,7 @@ class ControladorLupaSuprema(ControladorLupa):
             print(f"[ERROR] Error al verificar movimientos nuevos: {str(e)}")
             return False
 
+#Aqui se maneja la navegacion en la pestaña Corte Apelaciones de Mis Causas
 class ControladorLupaApelacionesPrincipal(ControladorLupa):
     def obtener_config(self):
         return {
@@ -1266,7 +1269,7 @@ class ControladorLupaApelacionesPrincipal(ControladorLupa):
             print(f"[ERROR] Error al verificar movimientos nuevos: {str(e)}")
             return False
 
-
+#Aqui se maneja la navegacion en la pestaña Civil de Mis Causas
 class ControladorLupaCivil(ControladorLupa):
     def obtener_config(self):
         return {
@@ -1592,6 +1595,7 @@ class ControladorLupaCivil(ControladorLupa):
             print(f"  Error al obtener opciones del dropdown: {str(e)}")
             return []
 
+#Aqui se maneja la navegacion en la pestaña Cobranza de Mis Causas
 class ControladorLupaCobranza(ControladorLupa):
     def obtener_config(self):
         return {
@@ -1878,7 +1882,7 @@ class ControladorLupaCobranza(ControladorLupa):
             print(f"[ERROR] Error al verificar movimientos nuevos: {str(e)}")
             return False
 
-
+# Función para obtener el controlador de lupa correspondiente
 def obtener_controlador_lupa(tipo, page):
     controladores = {
         'suprema': ControladorLupaSuprema,
@@ -1929,7 +1933,7 @@ def navigate_mis_causas_tabs(page):
                 print(f"  Pestaña '{tab_name}' ya fue visitada. Continuando...")
                 continue
             
-            # Tratamiento especial para la pestaña "Corte Apelaciones"
+            # Tratamiento especial para la pestaña "Corte Apelaciones" (se debe actualizar la pagina antes, si no, el modal de la causa queda inactivo)
             if tab_name == "Corte Apelaciones":
                 print("  Implementando estrategia especial para Corte Apelaciones...")
                 
@@ -2072,9 +2076,7 @@ def navigate_mis_causas_tabs(page):
         except Exception as e:
             print(f"  Error navegando a pestaña '{tab_name}': {str(e)}")
             # Si ocurre un error, intentamos seguir con la siguiente pestaña
-            continue
-
-    
+            continue    
     print("--- Finalizada navegación por pestañas de Mis Causas ---\n")
 
 
@@ -2146,6 +2148,7 @@ def automatizar_poder_judicial(page, username, password):
 
 #Cuerpo del correo electrónico
 def construir_cuerpo_html(movimientos):
+    #si no hay movimientos nuevos
     if not movimientos:
         return """
             <html>
@@ -2161,6 +2164,7 @@ def construir_cuerpo_html(movimientos):
             </body>
             </html>
             """
+    #si hay movimientos nuevos
     else:
         html = """
         <html>
@@ -2256,27 +2260,28 @@ def enviar_correo(movimientos=None, asunto="Notificación de Sistema de Poder Ju
             msg.attach(MIMEText(html_cuerpo, 'html'))
             
         # Adjuntar PDFs y archivos de apelaciones
-        for movimiento in movimientos:
-            # Adjuntar PDF principal si existe
-            if movimiento.tiene_pdf():
-                try:
-                    with open(movimiento.pdf_path, 'rb') as f:
-                        part = MIMEApplication(f.read(), Name=os.path.basename(movimiento.pdf_path))
-                        part['Content-Disposition'] = f'attachment; filename="{os.path.basename(movimiento.pdf_path)}"'
-                        msg.attach(part)
-                except Exception as e:
-                    logging.error(f"Error adjuntando archivo {movimiento.pdf_path}: {str(e)}")
-                
-            # Adjuntar archivos de apelaciones si existen
-            if movimiento.archivos_apelaciones:
-                for archivo_apelacion in movimiento.archivos_apelaciones:
+        if movimientos:    
+            for movimiento in movimientos:
+                # Adjuntar PDF principal si existe
+                if movimiento.tiene_pdf():
                     try:
-                        with open(archivo_apelacion, 'rb') as f:
-                            part = MIMEApplication(f.read(), Name=os.path.basename(archivo_apelacion))
-                            part['Content-Disposition'] = f'attachment; filename="{os.path.basename(archivo_apelacion)}"'
+                        with open(movimiento.pdf_path, 'rb') as f:
+                            part = MIMEApplication(f.read(), Name=os.path.basename(movimiento.pdf_path))
+                            part['Content-Disposition'] = f'attachment; filename="{os.path.basename(movimiento.pdf_path)}"'
                             msg.attach(part)
                     except Exception as e:
-                        logging.error(f"Error adjuntando archivo de apelación {archivo_apelacion}: {str(e)}")
+                        logging.error(f"Error adjuntando archivo {movimiento.pdf_path}: {str(e)}")
+                    
+                # Adjuntar archivos de apelaciones si existen
+                if movimiento.archivos_apelaciones:
+                    for archivo_apelacion in movimiento.archivos_apelaciones:
+                        try:
+                            with open(archivo_apelacion, 'rb') as f:
+                                part = MIMEApplication(f.read(), Name=os.path.basename(archivo_apelacion))
+                                part['Content-Disposition'] = f'attachment; filename="{os.path.basename(archivo_apelacion)}"'
+                                msg.attach(part)
+                        except Exception as e:
+                            logging.error(f"Error adjuntando archivo de apelación {archivo_apelacion}: {str(e)}")
             
         
         # Enviar correo con reintentos
@@ -2307,9 +2312,9 @@ def main():
     today = datetime.datetime.now()
     is_weekend = today.weekday() >= 5  # 5 = sábado, 6 = domingo
 
-    #if is_weekend:
-     #   logging.info("Hoy es fin de semana. No se realizan tareas.")
-      #  return
+    if is_weekend:
+        logging.info("Hoy es fin de semana. No se realizan tareas.")
+        return
 
     # Obtiene las variables de entorno
     USERNAME = os.getenv("RUT")
