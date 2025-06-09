@@ -327,8 +327,23 @@ def extraer_resumen_pdf(pdf_path):
             if len(reader.pages) > 0:
                 text = reader.pages[0].extract_text()
                 if text:
-                    palabras = text.strip().split()
-                    resumen = " ".join(palabras[:15])
+                    # Elimina advertencias de firma electrónica y URLs
+                    lineas = text.strip().splitlines()
+                    lineas_utiles = []
+                    for linea in lineas:
+                        if (
+                            "firma electrónica" in linea.lower()
+                            or "verificadoc.pjud.cl" in linea.lower()
+                            or "horaoficial.cl" in linea.lower()
+                            or "puede ser validado" in linea.lower()
+                            or "establecido en chile" in linea.lower()
+                            or "para más información" in linea.lower()
+                        ):
+                            continue
+                        if linea.strip():
+                            lineas_utiles.append(linea.strip())
+                    # Toma las primeras 15 palabras de las primeras líneas útiles
+                    resumen = " ".join(" ".join(lineas_utiles).split()[:15])
                     return resumen if resumen else "sin_resumen"
         return "sin_resumen"
     except Exception as e:
@@ -1477,14 +1492,14 @@ class ControladorLupaCivil(ControladorLupa):
                                     fecha_tramite_pdf = fecha_tramite_str[6:10] + fecha_tramite_str[3:5] + fecha_tramite_str[0:2]
                                     # Extraer el texto del rol para el nombre del PDF
                                     panel = self.page.query_selector("#modalDetalleMisCauCivil .modal-body .panel.panel-default")
-                                    libro_td = panel.query_selector("td:has-text('rol')") if panel else None
-                                    if libro_td:
-                                        libro_text = libro_td.inner_text()
-                                        libro_pdf = libro_text.replace("ROL: ", "").strip().replace("/", " ").replace("-", " ")
+                                    rol_td = panel.query_selector("td:has-text('rol')") if panel else None
+                                    if rol_td:
+                                        rol_text = rol_td.inner_text()
+                                        rol_pdf = rol_text.replace("ROL: ", "").strip().replace("/", " ").replace("-", " ")
                                     else:
-                                        libro_pdf = "sin rol"
+                                        rol_pdf = "sin rol"
                                     # Nombre temporal antes de tener el resumen
-                                    pdf_filename_tmp = f"{carpeta_historia}/{fecha_tramite_pdf} {folio} {libro_pdf}_temp.pdf"
+                                    pdf_filename_tmp = f"{carpeta_historia}/{fecha_tramite_pdf} {folio} {rol_pdf}_temp.pdf"
                                     preview_path = pdf_filename_tmp.replace('.pdf', '_preview.png')
 
                                     if token:
@@ -1501,7 +1516,7 @@ class ControladorLupaCivil(ControladorLupa):
                                             resumen_pdf_limpio = limpiar_nombre_archivo(resumen_pdf)
                                             print(f"[DEBUG] Resumen después de limpiar: {resumen_pdf_limpio!r}")
 
-                                            pdf_filename = f"{carpeta_historia}/{fecha_tramite_pdf} {folio} {libro_pdf} {resumen_pdf_limpio}.pdf"
+                                            pdf_filename = f"{carpeta_historia}/{fecha_tramite_pdf} {folio} {rol_pdf} {resumen_pdf_limpio}.pdf"
                                             # Evitar sobrescribir archivos existentes
                                             if os.path.exists(pdf_filename):
                                                 print(f"[WARN] El archivo final {pdf_filename} ya existe. Se eliminará para evitar conflicto.")
@@ -1511,6 +1526,7 @@ class ControladorLupaCivil(ControladorLupa):
                                             base, ext = os.path.splitext(pdf_filename)
                                             if len(pdf_filename) > max_filename_len:
                                                 pdf_filename = base[:max_filename_len - len(ext)] + ext
+                                            #renombrar el archivo temporal al nombre final
                                             os.rename(pdf_filename_tmp, pdf_filename)
                                             pdf_path = pdf_filename
                                             preview_path = pdf_filename.replace('.pdf', '_preview.png')
@@ -1528,7 +1544,7 @@ class ControladorLupaCivil(ControladorLupa):
                                 else:
                                     print(f"[WARN] No hay PDF disponible para el movimiento {folio}")
 
-                                # Crear y agregar el movimiento a la lista global usando la nueva función
+                                # Crear y agregar el movimiento a la lista global 
                                 movimiento_pjud = MovimientoPJUD(
                                     folio=folio,
                                     seccion=tab_name,
@@ -1607,56 +1623,6 @@ class ControladorLupaCobranza(ControladorLupa):
             'process_content': True
         }
 
-    #Limpia el texto para usarlo como nombre de carpeta
-    def _limpiar_nombre_carpeta(self, texto):
-        
-        # Eliminar caracteres no permitidos en nombres de archivo
-        texto_limpio = re.sub(r'[<>:"/\\|?*]', '_', texto)
-        # Eliminar tokens JWT y otros caracteres especiales
-        texto_limpio = re.sub(r'eyJ[A-Za-z0-9-_=]+\.[A-Za-z0-9-_=]+\.?[A-Za-z0-9-_.+/=]*', '', texto_limpio)
-        # Eliminar espacios múltiples y guiones bajos
-        texto_limpio = re.sub(r'\s+', '_', texto_limpio)
-        texto_limpio = re.sub(r'_+', '_', texto_limpio)
-        # Limitar longitud y eliminar caracteres al final
-        texto_limpio = texto_limpio[:50].strip('_')
-        return texto_limpio
-
-    #Obtiene todas las opciones del dropdown de cuadernos de Cobranza
-    def _obtener_opciones_cuaderno(self):
-        
-        try:
-            print("  Obteniendo opciones del dropdown de cuadernos de Cobranza...")
-            
-            # Esperar a que el dropdown esté visible y habilitado
-            dropdown = self.page.wait_for_selector('#selCuadernoCob:not([disabled])', timeout=5000)
-            if not dropdown:
-                raise Exception("No se encontró el dropdown")
-            
-            # Obtener opciones usando JavaScript
-            opciones = self.page.evaluate("""
-                () => {
-                    const select = document.querySelector('#selCuadernoCob');
-                    if (!select) return [];
-                    
-                    return Array.from(select.options).map(option => ({
-                        numero: option.value,
-                        texto: option.textContent.trim(),
-                        es_seleccionado: option.selected
-                    }));
-                }
-            """)
-            
-            if not opciones:
-                print("  No se encontraron opciones en el dropdown")
-                return []
-                
-            print(f"  Se encontraron {len(opciones)} opciones en el dropdown")
-            return opciones
-            
-        except Exception as e:
-            print(f"  Error al obtener opciones del dropdown: {str(e)}")
-            return []
-
     def _procesar_contenido(self, tab_name, caratulado):
         try:
             print(f"[INFO] Procesando movimientos en Cobranza...")
@@ -1669,7 +1635,7 @@ class ControladorLupaCobranza(ControladorLupa):
                 
             movimientos_nuevos = False
             carpeta_general = tab_name.replace(' ', '_')
-            carpeta_caratulado = f"{carpeta_general}/{self._limpiar_nombre_carpeta(caratulado)}"
+            carpeta_caratulado = f"{carpeta_general}/{caratulado}"
             
             # Asegurar que la carpeta base existe
             if not os.path.exists(carpeta_caratulado):
@@ -1684,7 +1650,8 @@ class ControladorLupaCobranza(ControladorLupa):
                     print(f"  Procesando cuaderno: {texto}")
                     
                     # Limpiar el texto para usarlo como nombre de carpeta
-                    texto_limpio = self._limpiar_nombre_carpeta(texto)
+                    texto_limpio = re.sub(r'[<>:"/\\|?*]', '_', texto)
+                    texto_limpio = texto_limpio[:50] 
                     
                     # Crear carpeta para el cuaderno con nombre limpio
                     nombre_carpeta = f"Cuaderno_{texto_limpio}"
@@ -1821,11 +1788,21 @@ class ControladorLupaCobranza(ControladorLupa):
                                 pdf_path = None
                                 if pdf_form:
                                     token = pdf_form.query_selector("input[name='dtaDoc']").get_attribute("value")
-                                    # Construir nombre base del archivo usando fecha y libro/cuaderno
                                     fecha_tramite_pdf = fecha_tramite_str[6:10] + fecha_tramite_str[3:5] + fecha_tramite_str[0:2]
-                                    libro_pdf = texto_limpio  # Usamos el nombre limpio del cuaderno como "libro"
+                                    # Extraer el texto del rol para el nombre del PDF
+                                    panel = self.page.query_selector("#modalDetalleMisCauCobranza .modal-body .panel.panel-default")                                       
+                                    rit_td = panel.query_selector("td:has-text('rit')") if panel else None
+                                    if rit_td:
+                                        rit_text = rit_td.inner_text()
+                                        rit_pdf = rit_text.replace("RIT: ", "").strip().replace("/", " ").replace("-", " ")
+                                    else:
+                                        rit_pdf = "sin rit"
+                                    
+                                    folio_limpio = limpiar_nombre_archivo(folio)[:10]
+                                    rit_pdf_limpio = limpiar_nombre_archivo(rit_pdf)[:20]
+                                            
                                     # Nombre temporal antes de tener el resumen
-                                    pdf_filename_tmp = f"{carpeta_historia}/{fecha_tramite_pdf} {libro_pdf}_temp.pdf"
+                                    pdf_filename_tmp = f"{carpeta_historia}/{fecha_tramite_pdf} {folio_limpio} {rit_pdf_limpio}_temp.pdf"
                                     preview_path = pdf_filename_tmp.replace('.pdf', '_preview.png')
 
                                     if token:
@@ -1833,9 +1810,24 @@ class ControladorLupaCobranza(ControladorLupa):
                                         original_url = base_url + token
                                         pdf_descargado = descargar_pdf_directo(original_url, pdf_filename_tmp, self.page)
                                         if pdf_descargado:
-                                            resumen_pdf = extraer_resumen_pdf(pdf_filename_tmp)
-                                            resumen_pdf_limpio = limpiar_nombre_archivo(resumen_pdf)
-                                            pdf_filename = f"{carpeta_historia}/{fecha_tramite_pdf} {libro_pdf} {resumen_pdf_limpio}.pdf"
+                                            resumen_pdf = extraer_resumen_pdf(pdf_filename_tmp)                                                                                
+                                            print(f"[DEBUG] Resumen antes de limpiar: {resumen_pdf!r}")
+                                            
+                                            # Limpiar y limitar el resumen a 40 caracteres
+                                            resumen_pdf_limpio = limpiar_nombre_archivo(resumen_pdf)[:40]
+                                            print(f"[DEBUG] Resumen después de limpiar: {resumen_pdf_limpio!r}")
+                                           
+                                            pdf_filename = f"{carpeta_historia}/{fecha_tramite_pdf} {folio_limpio} {rit_pdf_limpio} {resumen_pdf_limpio}.pdf"
+                                            # Evitar sobrescribir archivos existentes
+                                            if os.path.exists(pdf_filename):
+                                                print(f"[WARN] El archivo final {pdf_filename} ya existe. Se eliminará para evitar conflicto.")
+                                                os.remove(pdf_filename)                                            
+                                            # Limitar el nombre del archivo si es demasiado largo
+                                            max_filename_len = 156
+                                            base, ext = os.path.splitext(pdf_filename)
+                                            if len(pdf_filename) > max_filename_len:
+                                                pdf_filename = base[:max_filename_len - len(ext)] + ext
+                                            #renombrar el archivo temporal al nombre final
                                             os.rename(pdf_filename_tmp, pdf_filename)
                                             pdf_path = pdf_filename
                                             preview_path = pdf_filename.replace('.pdf', '_preview.png')
@@ -1881,6 +1873,42 @@ class ControladorLupaCobranza(ControladorLupa):
         except Exception as e:
             print(f"[ERROR] Error al verificar movimientos nuevos: {str(e)}")
             return False
+        
+    #Obtiene todas las opciones del dropdown de cuadernos de Cobranza
+    def _obtener_opciones_cuaderno(self):
+        
+        try:
+            print("  Obteniendo opciones del dropdown de cuadernos de Cobranza...")
+            
+            # Esperar a que el dropdown esté visible y habilitado
+            dropdown = self.page.wait_for_selector('#selCuadernoCob:not([disabled])', timeout=5000)
+            if not dropdown:
+                raise Exception("No se encontró el dropdown")
+            
+            # Obtener opciones usando JavaScript
+            opciones = self.page.evaluate("""
+                () => {
+                    const select = document.querySelector('#selCuadernoCob');
+                    if (!select) return [];
+                    
+                    return Array.from(select.options).map(option => ({
+                        numero: option.value,
+                        texto: option.textContent.trim(),
+                        es_seleccionado: option.selected
+                    }));
+                }
+            """)
+            
+            if not opciones:
+                print("  No se encontraron opciones en el dropdown")
+                return []
+                
+            print(f"  Se encontraron {len(opciones)} opciones en el dropdown")
+            return opciones
+            
+        except Exception as e:
+            print(f"  Error al obtener opciones del dropdown: {str(e)}")
+            return []
 
 # Función para obtener el controlador de lupa correspondiente
 def obtener_controlador_lupa(tipo, page):
