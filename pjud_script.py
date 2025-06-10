@@ -23,9 +23,9 @@ logging.basicConfig(
 )
 
 # Variables globales para correo
-EMAIL_SENDER = os.getenv("EMAIL_SENDER")
-EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
-EMAIL_RECIPIENTS = os.getenv("EMAIL_RECIPIENTS", "").split(",")
+EMAIL_SENDER = os.getenv("EMAIL_SENDER_TEST")
+EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD_TEST")
+EMAIL_RECIPIENTS = os.getenv("EMAIL_RECIPIENTS_TEST", "").split(",")
 SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 587
 
@@ -2173,6 +2173,11 @@ def automatizar_poder_judicial(page, username, password):
         print(f"Error en la automatización del Poder Judicial: {str(e)}")
         return False
 
+def limpiar_identificador(texto):
+    if not texto:
+        return ""
+    # Elimina prefijos como "Libro :", "RIT :", "ROL:" (con o sin espacios)
+    return re.sub(r'^(Libro\s*:|RIT\s*:|ROL\s*:)\s*', '', texto, flags=re.IGNORECASE).strip()
 
 #Cuerpo del correo electrónico
 def construir_cuerpo_html(movimientos):
@@ -2215,9 +2220,13 @@ def construir_cuerpo_html(movimientos):
         """
 
         for i, mov in enumerate(movimientos, 1):
+            # Extrae el identificador limpio
+            identificador_limpio = limpiar_identificador(mov.rol) or limpiar_identificador(mov.rit) or limpiar_identificador(mov.libro)
+            if not identificador_limpio:
+                identificador_limpio = f"{i}"
             html += f"""
                 <div class="movimiento">
-                    <h3>Movimiento {i}:</h3>
+                    <h3>{identificador_limpio}, {mov.caratulado}, </h3>
                     <ul>
                         <li>Instancia: {mov.seccion}</li>
                         <li>{mov.identificador_causa or 'No disponible'}</li>
