@@ -362,7 +362,28 @@ def extraer_resumen_pdf(pdf_path):
     except Exception as e:
         print(f"[ERROR] No se pudo extraer resumen del PDF: {e}")
         return "sin_resumen"
-    
+
+#genera un screenshot de la primera página del PDF  
+def generar_preview_pdf(pdf_path, preview_path, width=400):
+    try:
+        images = convert_from_path(pdf_path, first_page=1, last_page=1)
+        if images:
+            img = images[0]
+            w, h = img.size
+            # Recorta
+            crop_height = int(h * 0.5 * 0.7)
+            upper_part = img.crop((0, 0, w, crop_height))
+            # Redimensiona manteniendo el aspecto correcto
+            aspect_ratio = crop_height / w
+            new_height = int(width * aspect_ratio)
+            resized = upper_part.resize((width, new_height), Image.LANCZOS)
+            resized.save(preview_path, 'PNG')
+            print(f"[INFO] Vista previa guardada en: {preview_path}")
+        else:
+            print(f"[WARN] No se pudo generar la vista previa para {pdf_path}")
+    except Exception as e:
+        print(f"[ERROR] Error generando preview: {e}")
+
 #Lupa se refiere a el icon de lupa para abrir cada causa 
 #esta es la clase base o general para los controladores de lupas
 class ControladorLupa:
@@ -574,12 +595,7 @@ class ControladorLupa:
                                         # Generar preview si no existe
                                         if not os.path.exists(preview_path):
                                             print(f"[INFO] Generando vista previa del PDF para {pdf_filename}...")
-                                            images = convert_from_path(pdf_filename, first_page=1, last_page=1)
-                                            if images and len(images) > 0:
-                                                images[0].save(preview_path, 'PNG')
-                                                print(f"[INFO] Vista previa guardada en: {preview_path}")
-                                            else:
-                                                print(f"[WARN] No se pudo generar la vista previa para {pdf_filename}")
+                                            generar_preview_pdf(pdf_filename, preview_path)
                                     else:
                                         print(f"[ERROR] No se pudo descargar el PDF para folio {folio}")
                                 except Exception as e:
@@ -786,14 +802,11 @@ class ControladorLupa:
                                 
                                 if pdf_descargado:
                                     archivos_apelaciones.append(pdf_filename)
-                                    # Generar una vista previa del PDF (primera página como imagen)
+                                    # Generar una vista previa del PDF (mitad superior, redimensionada)
                                     try:
                                         print(f"  Generando vista previa del PDF para {pdf_filename}...")
-                                        # Convertir la primera página del PDF a imagen
-                                        images = convert_from_path(pdf_filename, first_page=1, last_page=1)
-                                        if images and len(images) > 0:
-                                            # Guardar solo la primera página como imagen
-                                            images[0].save(preview_path, 'PNG')
+                                        generar_preview_pdf(pdf_filename, preview_path)
+                                        if os.path.exists(preview_path):
                                             archivos_apelaciones.append(preview_path)
                                             print(f"  Vista previa guardada en: {preview_path}")
                                         else:
@@ -1038,12 +1051,7 @@ class ControladorLupaSuprema(ControladorLupa):
                                         # Generar preview si no existe
                                         if not os.path.exists(preview_path):
                                             print(f"[INFO] Generando vista previa del PDF para {pdf_filename}...")
-                                            images = convert_from_path(pdf_filename, first_page=1, last_page=1)
-                                            if images and len(images) > 0:
-                                                images[0].save(preview_path, 'PNG')
-                                                print(f"[INFO] Vista previa guardada en: {preview_path}")
-                                            else:
-                                                print(f"[WARN] No se pudo generar la vista previa para {pdf_filename}")
+                                            generar_preview_pdf(pdf_filename, preview_path)
                                     else:
                                         print(f"[ERROR] No se pudo descargar el PDF para folio {folio}")
                                 except Exception as e:
@@ -1270,15 +1278,10 @@ class ControladorLupaApelacionesPrincipal(ControladorLupa):
                                     os.rename(pdf_filename_tmp, pdf_filename)
                                     pdf_path = pdf_filename
                                     preview_path = pdf_filename.replace('.pdf', '_preview.png')
-                                    # Generar vista previa si no existe
+                                    # Generar preview si no existe
                                     if not os.path.exists(preview_path):
                                         print(f"[INFO] Generando vista previa del PDF para {pdf_filename}...")
-                                        images = convert_from_path(pdf_filename, first_page=1, last_page=1)
-                                        if images and len(images) > 0:
-                                            images[0].save(preview_path, 'PNG')
-                                            print(f"[INFO] Vista previa guardada en: {preview_path}")
-                                        else:
-                                            print(f"[WARN] No se pudo generar la vista previa para {pdf_filename}")
+                                        generar_preview_pdf(pdf_filename, preview_path)
                                 else:
                                     print(f"[ERROR] No se pudo descargar el PDF para folio {folio}")
                         else:
@@ -1562,17 +1565,9 @@ class ControladorLupaCivil(ControladorLupa):
                                             os.rename(pdf_filename_tmp, pdf_filename)
                                             pdf_path = pdf_filename
                                             preview_path = pdf_filename.replace('.pdf', '_preview.png')
-                                            try:
-                                                if not os.path.exists(preview_path):
-                                                    print(f"[INFO] Generando vista previa del PDF para {pdf_filename}...")
-                                                    images = convert_from_path(pdf_filename, first_page=1, last_page=1)
-                                                    if images and len(images) > 0:
-                                                        images[0].save(preview_path, 'PNG')
-                                                        print(f"[INFO] Vista previa guardada en: {preview_path}")
-                                                    else:
-                                                        print(f"[WARN] No se pudo generar la vista previa para {pdf_filename}")
-                                            except Exception as prev_error:
-                                                print(f"[ERROR] Error al generar la vista previa del PDF: {str(prev_error)}")
+                                            if not os.path.exists(preview_path):
+                                                print(f"[INFO] Generando vista previa del PDF para {pdf_filename}...")
+                                                generar_preview_pdf(pdf_filename, preview_path)
                                 else:
                                     print(f"[WARN] No hay PDF disponible para el movimiento {folio}")
 
@@ -1874,17 +1869,9 @@ class ControladorLupaCobranza(ControladorLupa):
                                             os.rename(pdf_filename_tmp, pdf_filename)
                                             pdf_path = pdf_filename
                                             preview_path = pdf_filename.replace('.pdf', '_preview.png')
-                                            try:
-                                                if not os.path.exists(preview_path):
-                                                    print(f"[INFO] Generando vista previa del PDF para {pdf_filename}...")
-                                                    images = convert_from_path(pdf_filename, first_page=1, last_page=1)
-                                                    if images and len(images) > 0:
-                                                        images[0].save(preview_path, 'PNG')
-                                                        print(f"[INFO] Vista previa guardada en: {preview_path}")
-                                                    else:
-                                                        print(f"[WARN] No se pudo generar la vista previa para {pdf_filename}")
-                                            except Exception as prev_error:
-                                                print(f"[ERROR] Error al generar la vista previa del PDF: {str(prev_error)}")
+                                            if not os.path.exists(preview_path):
+                                                print(f"[INFO] Generando vista previa del PDF para {pdf_filename}...")
+                                                generar_preview_pdf(pdf_filename, preview_path)
                                 else:
                                     print(f"[WARN] No hay PDF disponible para el movimiento {folio}")
                                 
