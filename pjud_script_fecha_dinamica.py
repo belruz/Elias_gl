@@ -9,6 +9,7 @@ from pdf2image import convert_from_path
 import PyPDF2
 import uuid
 from email.mime.image import MIMEImage
+from PIL import Image 
 
 #Carga del env  
 dotenv_path = Path(__file__).parent / '.env'

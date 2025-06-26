@@ -427,7 +427,7 @@ class ControladorLupa:
                     self._cerrar_modal()
                     
                     #break para procesar solo la primera lupa 
-                    break
+                    #break
                     
                 except Exception as e:
                     print(f"  Error procesando la lupa {idx+1}: {str(e)}")
@@ -940,7 +940,7 @@ class ControladorLupaSuprema(ControladorLupa):
                     self._cerrar_modal()
                     
                     #break para procesar solo la primera lupa
-                    break
+                    #break
                     
                 except Exception as e:
                     print(f"  Error procesando la lupa {idx+1}: {str(e)}")
@@ -1127,7 +1127,7 @@ class ControladorLupaApelacionesPrincipal(ControladorLupa):
                     self._cerrar_modal()
                     
                     #break para procesar solo la primera lupa
-                    break
+                    #break
                     
                 except Exception as e:
                     print(f"  Error procesando la lupa {idx+1}: {str(e)}")
