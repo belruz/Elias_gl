@@ -1215,6 +1215,8 @@ class ControladorLupaApelacionesPrincipal(ControladorLupa):
                             print(f"[INFO] Movimiento agregado exitosamente al diccionario global")
                         else:
                             print(f"[INFO] El movimiento ya existía en el diccionario global")
+                    else:
+                        print(f"[INFO] Movimiento ignorado - Folio: {folio}, Fecha: {fecha_tramite_str} (no coincide con fecha objetivo)")
                 except Exception as e:
                     print(f"[ERROR] Error procesando movimiento: {str(e)}")
                     continue
@@ -1501,6 +1503,9 @@ class ControladorLupaCivil(ControladorLupa):
                                     print(f"[INFO] Movimiento agregado exitosamente al diccionario global")
                                 else:
                                     print(f"[INFO] El movimiento ya existía en el diccionario global")
+                            else:
+                                print(f"[INFO] Movimiento ignorado - Folio: {folio}, Fecha: {fecha_tramite_str} (no coincide con fecha objetivo)")
+                                
                         except Exception as e:
                             print(f"[ERROR] Error procesando movimiento: {str(e)}")
                             continue
@@ -1805,6 +1810,9 @@ class ControladorLupaCobranza(ControladorLupa):
                                     print(f"[INFO] Movimiento agregado exitosamente al diccionario global")
                                 else:
                                     print(f"[INFO] El movimiento ya existía en el diccionario global")
+                            else:
+                                print(f"[INFO] Movimiento ignorado - Folio: {folio}, Fecha: {fecha_tramite_str} (no coincide con fecha objetivo)")
+                                
                         except Exception as e:
                             print(f"[ERROR] Error procesando movimiento: {str(e)}")
                             continue
