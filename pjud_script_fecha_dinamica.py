@@ -147,7 +147,7 @@ def setup_browser():
     print(f"User-Agent seleccionado: {selected_user_agent}")
     
     browser = playwright.chromium.launch(
-        headless=True,  # True = sin interfaz gráfica
+        headless=False,  # True = sin interfaz gráfica
         args=[
             '--disable-blink-features=AutomationControlled',
             '--disable-dev-shm-usage',
@@ -386,7 +386,7 @@ def generar_preview_pdf(pdf_path, preview_path, width=400):
         print(f"[ERROR] Error generando preview: {e}")
 
 #Lupa se refiere a el icon de lupa para abrir cada causa 
-#esta es la clase base o general para los controladores de lupas
+#esta es la clase base o general para los controladores (suprema, civil, laboral, etc.)
 class ControladorLupa:
     def __init__(self, page):
         self.page = page

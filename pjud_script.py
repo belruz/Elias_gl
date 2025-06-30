@@ -144,7 +144,7 @@ def setup_browser():
     print(f"User-Agent seleccionado: {selected_user_agent}")
     
     browser = playwright.chromium.launch(
-        headless=True,  # True = sin interfaz gráfica
+        headless=False,  # True = sin interfaz gráfica
         args=[
             '--disable-blink-features=AutomationControlled',
             '--disable-dev-shm-usage',
@@ -833,83 +833,6 @@ class ControladorLupaSuprema(ControladorLupa):
             'expected_headers': ['Folio', 'Tipo', 'Descripción', 'Fecha', 'Documento'],
             'process_content': True
         }
-    #def _cambiar_pestana_modal(self, caratulado, tab_name):
-    #   try:
-    #     print("  Cambiando a la pestaña 'Expediente Corte Apelaciones'...")
-    #        self.page.wait_for_selector(".nav-tabs li a[href='#corteApelaciones']", timeout=5000)
-    #        self.page.evaluate("document.querySelector('.nav-tabs li a[href=\"#corteApelaciones\"]').click();")
-    #        self.page.wait_for_selector("#corteApelaciones.active", timeout=5000)
-    #        random_sleep(1, 2)
-    #        print("  Cambio a pestaña 'Expediente Corte Apelaciones' exitoso")
-    #        try:
-    #            print("  Buscando la lupa en la pestaña Expediente Corte Apelaciones...")
-    #            self.page.wait_for_selector("a[href='#modalDetalleApelaciones']", timeout=5000)
-    #            self.page.evaluate("document.querySelector('a[href=\"#modalDetalleApelaciones\"]').click();")
-    #            print("  Clic en lupa de Expediente Corte Apelaciones exitoso")
-    #            self.page.wait_for_selector("h4.modal-title:has-text('Detalle Causa Apelaciones')", timeout=10000)
-    #            random_sleep(1, 2)
-    #            print("  Modal 'Detalle Causa Apelaciones' abierto correctamente")
-    #            carpeta_general = tab_name.replace(' ', '_')
-    #            carpeta_caratulado = f"{carpeta_general}/{caratulado}"
-    #            subcarpeta = f"{carpeta_caratulado}/Detalle_causa_apelaciones"
-    #            
-              # Crear la subcarpeta si no existe
-    #            if not os.path.exists(subcarpeta):
-    #                os.makedirs(subcarpeta)
-    #            
-                # Capturar el panel de detalle de causa
-    #            try:
-    #                print("  Intentando capturar panel de detalles de apelaciones...")
-                    # Esperar a que el tab-pane recursoApe esté activo
-    #                self.page.wait_for_selector("#recursoApe.active", timeout=5000)
-    #                # Buscar el panel dentro del tab-pane recursoApe
-    #               panel = self.page.query_selector("#recursoApe .panel.panel-default")
-    #                numero_causa = None
-    #                if panel:
-                        # Extraer el número de causa del Libro
-    #                    try:
-    #                        libro_td = panel.query_selector("td:has-text('libro')")
-    #                        if libro_td:
-    #                            libro_text = libro_td.inner_text()
-    #                            print(f"  Texto completo del libro extraído: {libro_text}")
-    #                    except Exception as e:
-    #                        print(f"  No se pudo extraer el número de causa: {str(e)}")
-    #                    
-                        # Hacer scroll al panel
-    #                    self.page.evaluate("""
-    #                       (element) => {
-    #                          element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    #                     }
-    #                """, panel)
-    #               random_sleep(1, 2)
-    #                    
-    #                    # Guardar la captura del panel
-    #                    detalle_panel_path = f"{subcarpeta}/Detalle_causa_{numero_causa}.png" if numero_causa else f"{subcarpeta}/Detalle_causa.png"
-    #                    panel.screenshot(path=detalle_panel_path)
-    #                    print(f"[INFO] Captura del panel de apelaciones guardada: {detalle_panel_path}")
-    #                else:
-    #                    print("[WARN] No se encontró el panel de información de apelaciones")
-    #            except Exception as panel_error:
-    #                print(f"[WARN] No se pudo capturar el panel de apelaciones: {str(panel_error)}")
-    #                
-    #            archivos_apelaciones = self._verificar_movimientos_apelaciones(subcarpeta)
-                
-                # Buscar el movimiento correspondiente en MOVIMIENTOS_GLOBALES
-    #            if MOVIMIENTOS_GLOBALES and archivos_apelaciones:
-                    # Buscar el movimiento que coincida con el caratulado y la sección
-    #                for movimiento in MOVIMIENTOS_GLOBALES:
-    #                    if movimiento.caratulado == caratulado and movimiento.seccion == tab_name:
-    #                        movimiento.archivos_apelaciones = archivos_apelaciones
-    #                        print(f"  Archivos de apelaciones agregados al movimiento con caratulado: {caratulado}")
-    #                        break
-                
-    #            self._cerrar_ambos_modales()
-    #        except Exception as e:
-    #            print(f"  Error al procesar la lupa de Expediente Corte Apelaciones: {str(e)}")
-    #            self._cerrar_ambos_modales()
-    #    except Exception as e:
-    #        print(f"  Error al cambiar a la pestaña 'Expediente Corte Apelaciones': {str(e)}")
-    #        self._cerrar_ambos_modales()
 
 # Controlador de lupas corte Suprema 
     def manejar(self, tab_name):
