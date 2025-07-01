@@ -11,6 +11,7 @@ import uuid
 from email.mime.image import MIMEImage
 from PIL import Image 
 
+
 #Carga del env  
 dotenv_path = Path(__file__).parent / '.env'
 load_dotenv(dotenv_path=dotenv_path, override=True)
@@ -363,7 +364,7 @@ def extraer_resumen_pdf(pdf_path):
     except Exception as e:
         print(f"[ERROR] No se pudo extraer resumen del PDF: {e}")
         return "sin_resumen"
-
+    
 #genera un screenshot de la primera página del PDF  
 def generar_preview_pdf(pdf_path, preview_path, width=400):
     try:
@@ -384,9 +385,9 @@ def generar_preview_pdf(pdf_path, preview_path, width=400):
             print(f"[WARN] No se pudo generar la vista previa para {pdf_path}")
     except Exception as e:
         print(f"[ERROR] Error generando preview: {e}")
-
+        
 #Lupa se refiere a el icon de lupa para abrir cada causa 
-#esta es la clase base o general para los controladores (suprema, civil, laboral, etc.)
+#esta es la clase base o general para los controladores de lupas
 class ControladorLupa:
     def __init__(self, page):
         self.page = page
@@ -429,6 +430,9 @@ class ControladorLupa:
                     self._cambiar_pestana_modal(caratulado, tab_name)
                     self._cerrar_modal()
                     
+                    #break para procesar solo la primera lupa 
+                    #break
+                    
                 except Exception as e:
                     print(f"  Error procesando la lupa {idx+1}: {str(e)}")
                     self._manejar_error(e)
@@ -449,10 +453,18 @@ class ControladorLupa:
             print(f"  Error adicional al intentar cerrar modales: {str(close_error)}")
     
     def _cerrar_modal(self):
-        """Cierra el modal principal"""
         try:
             print("  Cerrando modal principal...")
-            self._cerrar_ambos_modales()
+            # Intentar cerrar usando el botón de cerrar del modal
+            close_button = self.page.query_selector(f"{self.config['modal_selector']} .close, {self.config['modal_selector']} button[data-dismiss='modal']")
+            if close_button:
+                close_button.click()
+                # Esperar a que el modal desaparezca realmente
+                self.page.wait_for_selector(self.config['modal_selector'], state='hidden', timeout=5000)
+            else:
+                # Si no hay botón, usar el método antiguo como fallback
+                self._cerrar_ambos_modales()
+                self.page.wait_for_selector(self.config['modal_selector'], state='hidden', timeout=5000)
         except Exception as e:
             print(f"  Error al cerrar modal: {str(e)}")
     
@@ -548,7 +560,6 @@ class ControladorLupa:
                     fecha_tramite_str = movimiento.query_selector("td:nth-child(5)").inner_text().strip()
                     fecha_tramite_pdf = fecha_tramite_str[6:10] + fecha_tramite_str[3:5] + fecha_tramite_str[0:2]
                     
-                    #comparar la fecha del tramite con la fecha actual
                     if fecha_tramite_str == obtener_fecha_actual_str():
                         movimientos_nuevos = True
                         carpeta_general = tab_name.replace(' ', '_')
@@ -759,7 +770,7 @@ class ControladorLupa:
             print("  Esperando por la tabla de movimientos en el tab activo...")
             self.page.wait_for_selector("#movimientosApe table.table-bordered", timeout=10000)
             
-            # Obtener fecha actual
+            # Fecha específica para la verificación de movimientos de apelaciones
             fecha_actual_str = obtener_fecha_actual_str()
             
             print(f"  Verificando movimientos del día: {fecha_actual_str}")
@@ -861,7 +872,10 @@ class ControladorLupaSuprema(ControladorLupa):
                     self._verificar_modal()
                     self._verificar_tabla()
                     movimientos_nuevos = self._procesar_contenido_suprema(tab_name, caratulado, corte_text)
-                    self._cerrar_modal()                   
+                    self._cerrar_modal()
+                    
+                    #break para procesar solo la primera lupa
+                    #break
                     
                 except Exception as e:
                     print(f"  Error procesando la lupa {idx+1}: {str(e)}")
@@ -897,7 +911,7 @@ class ControladorLupaSuprema(ControladorLupa):
             print(f"[INFO] Se encontraron {len(movimientos)} movimientos")
             movimientos_nuevos = False
             
-            # Obtener fecha actual
+            # Fecha específica para Corte Suprema
             fecha_objetivo = obtener_fecha_actual_str()
             print(f"[INFO] Buscando movimientos de la fecha: {fecha_objetivo}")
             
@@ -1046,7 +1060,10 @@ class ControladorLupaApelacionesPrincipal(ControladorLupa):
                     self._verificar_tabla()
                     movimientos_nuevos = self._procesar_contenido(tab_name, caratulado,corte_text)
                     self._cerrar_modal()
-
+                    
+                    #break para procesar solo la primera lupa
+                    #break
+                    
                 except Exception as e:
                     print(f"  Error procesando la lupa {idx+1}: {str(e)}")
                     self._manejar_error(e)
@@ -1136,13 +1153,16 @@ class ControladorLupaApelacionesPrincipal(ControladorLupa):
                 return False
                 
             movimientos_nuevos = False
+            
+            fecha_objetivo = obtener_fecha_actual_str()
+            print(f"[INFO] Buscando movimientos de la fecha: {fecha_objetivo}")
+            
             for movimiento in movimientos:
                 try:
                     folio = movimiento.query_selector("td:nth-child(1)").inner_text().strip()
                     fecha_tramite_str = movimiento.query_selector("td:nth-child(6)").inner_text().strip() 
-                    
-                    #comparar la fecha del movimiento con la fecha actual
-                    if fecha_tramite_str == obtener_fecha_actual_str():
+                    if fecha_tramite_str == fecha_objetivo:
+                        print(f"[INFO] Buscando movimientos de la fecha: {fecha_objetivo}")
                         movimientos_nuevos = True
                         carpeta_general = tab_name.replace(' ', '_')
                         carpeta_caratulado = f"{carpeta_general}/{caratulado}"
@@ -1193,7 +1213,7 @@ class ControladorLupaApelacionesPrincipal(ControladorLupa):
                                     os.rename(pdf_filename_tmp, pdf_filename)
                                     pdf_path = pdf_filename
                                     preview_path = pdf_filename.replace('.pdf', '_preview.png')
-                                    # Generar preview si no existe
+                                    # Generar vista previa si no existe
                                     if not os.path.exists(preview_path):
                                         print(f"[INFO] Generando vista previa del PDF para {pdf_filename}...")
                                         generar_preview_pdf(pdf_filename, preview_path)
@@ -1218,6 +1238,7 @@ class ControladorLupaApelacionesPrincipal(ControladorLupa):
                             print(f"[INFO] El movimiento ya existía en el diccionario global")
                     else:
                         print(f"[INFO] Movimiento ignorado - Folio: {folio}, Fecha: {fecha_tramite_str} (no coincide con fecha objetivo)")
+                                
                 except Exception as e:
                     print(f"[ERROR] Error procesando movimiento: {str(e)}")
                     continue
@@ -1250,11 +1271,6 @@ class ControladorLupaCivil(ControladorLupa):
                 
             movimientos_nuevos = False
             carpeta_general = tab_name.replace(' ', '_')
-            carpeta_caratulado = f"{carpeta_general}/{caratulado}"
-            
-            # Asegurar que la carpeta base existe
-            if not os.path.exists(carpeta_caratulado):
-                os.makedirs(carpeta_caratulado)
             
             # Procesar cada opción del dropdown
             for opcion in opciones_cuaderno:
@@ -1266,13 +1282,7 @@ class ControladorLupaCivil(ControladorLupa):
                     
                     # Limpiar el texto para usarlo como nombre de carpeta
                     texto_limpio = re.sub(r'[<>:"/\\|?*]', '_', texto)
-                    texto_limpio = texto_limpio[:50] 
-                    
-                    # Crear carpeta para el cuaderno con nombre limpio
-                    nombre_carpeta = f"Cuaderno_{texto_limpio}"
-                    carpeta_cuaderno = f"{carpeta_caratulado}/{nombre_carpeta}"
-                    if not os.path.exists(carpeta_cuaderno):
-                        os.makedirs(carpeta_cuaderno)
+                    texto_limpio = texto_limpio[:50]                     
                     
                     # Intentar seleccionar la opción en el dropdown con retry
                     max_retries = 3
@@ -1344,87 +1354,15 @@ class ControladorLupaCivil(ControladorLupa):
                                 print(f"[ERROR] No se pudo seleccionar la opción después de {max_retries} intentos: {str(e)}")
                                 raise e
                             print(f"[WARN] Intento {attempt + 1} fallido: {str(e)}")
-                            random_sleep(1, 2)
-                    
-                    # Capturar panel de detalles
-                    try:
-                        tribunal_td = None
-                        print(f"  Intentando capturar panel de detalles para cuaderno {texto}...")
-                        # Esperar a que el panel esté visible
-                        panel = self.page.wait_for_selector("#modalDetalleMisCauCivil .modal-body .panel.panel-default", timeout=5000)
-                        numero_causa = None
-                        if panel:
-                            # Extraer el número de causa del ROL
-                            try:
-                                rol_td = panel.query_selector("td:has-text('ROL:')")
-                                if rol_td:
-                                    rol_text = rol_td.inner_text()
-                                    print(f"[INFO] Texto completo del ROL extraído: {rol_text}")
-                            except Exception as rol_error:
-                                print(f"[WARN] Error extrayendo el número de causa del ROL: {str(rol_error)}")
-
-                            #extraer el tribunal
-                            try:
-                                tribunal_td = panel.query_selector("td:has-text('Tribunal:')")
-                                if tribunal_td:
-                                    tribunal_text = tribunal_td.inner_text().replace("Tribunal:", "").strip()
-                                    print(f"[INFO] Texto limpio del Tribunal extraído: {tribunal_text}")
-                            except Exception as tribunal_error:
-                                print(f"[WARN] Error extrayendo el Tribunal: {str(tribunal_error)}")
-
-                            # Intentar hacer scroll
-                            self.page.evaluate("""
-                                (element) => {
-                                    element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                                }
-                            """, panel)
-                            random_sleep(1, 2)
-                            # Intentar captura de pantalla
-                            detalle_panel_path = f"{carpeta_cuaderno}/Detalle_causa_{numero_causa}_Cuaderno_{texto_limpio}.png" if numero_causa else f"{carpeta_cuaderno}/Detalle_causa_Cuaderno_{texto_limpio}.png"
-                            try:
-                                panel.screenshot(path=detalle_panel_path, timeout=10000)
-                                print(f"[INFO] Captura del panel guardada: {detalle_panel_path}")
-                            except Exception as screenshot_error:
-                                print(f"[WARN] No se pudo tomar la captura del panel: {str(screenshot_error)}")
-                                # Intentar captura alternativa usando JavaScript
-                                try:
-                                    self.page.evaluate("""
-                                        (element) => {
-                                            const canvas = document.createElement('canvas');
-                                            const context = canvas.getContext('2d');
-                                            const rect = element.getBoundingClientRect();
-                                            canvas.width = rect.width;
-                                            canvas.height = rect.height;
-                                            context.drawWindow(
-                                                window,
-                                                rect.left,
-                                                rect.top,
-                                                rect.width,
-                                                rect.height,
-                                                'rgb(255,255,255)'
-                                            );
-                                            return canvas.toDataURL();
-                                        }
-                                    """, panel)
-                                    print("[INFO] Captura alternativa del panel realizada")
-                                except Exception as js_error:
-                                    print(f"[WARN] No se pudo realizar la captura alternativa: {str(js_error)}")
-                        else:
-                            print(f"[WARN] No se pudo procesar el panel: {str(panel_error)}")
-                    except Exception as panel_error:
-                        print(f"[WARN] No se pudo procesar el panel: {str(panel_error)}")
-                    
-                    # Crear carpeta Historia
-                    carpeta_historia = f"{carpeta_cuaderno}/Historia"
-                    if not os.path.exists(carpeta_historia):
-                        os.makedirs(carpeta_historia)
+                            random_sleep(1, 2)                    
                     
                     # Obtener movimientos de la tabla
                     movimientos = self.page.query_selector_all("#historiaCiv table.table-bordered tbody tr")
                     print(f"[INFO] Se encontraron {len(movimientos)} movimientos en el cuaderno {texto}")
                     
-                    # Obtener fecha actual
+                    # Fecha específica según el cuaderno
                     fecha_objetivo = obtener_fecha_actual_str()
+                    print(f"[INFO] Buscando movimientos de la fecha: {fecha_objetivo}")
                     
                     for movimiento in movimientos:
                         try:
@@ -1435,6 +1373,85 @@ class ControladorLupaCivil(ControladorLupa):
                                 fecha_tramite_str = fecha_tramite_str.split('(')[0].strip()
                             if fecha_tramite_str == fecha_objetivo:
                                 movimientos_nuevos = True
+                                #crear carpeta para el caratulado
+                                carpeta_caratulado = f"{carpeta_general}/{caratulado}"                                
+                                # Crear carpeta para el cuaderno con nombre limpio
+                                nombre_carpeta = f"Cuaderno_{texto_limpio}"
+                                carpeta_cuaderno = f"{carpeta_caratulado}/{nombre_carpeta}"
+                                if not os.path.exists(carpeta_cuaderno):
+                                    os.makedirs(carpeta_cuaderno)
+                                # Capturar panel de detalles
+                                try:
+                                    tribunal_td = None
+                                    print(f"  Intentando capturar panel de detalles para cuaderno {texto}...")
+                                    # Esperar a que el panel esté visible
+                                    panel = self.page.wait_for_selector("#modalDetalleMisCauCivil .modal-body .panel.panel-default", timeout=5000)
+                                    numero_causa = None
+                                    if panel:
+                                        # Extraer el número de causa del ROL
+                                        try:
+                                            rol_td = panel.query_selector("td:has-text('ROL:')")
+                                            if rol_td:
+                                                rol_text = rol_td.inner_text()
+                                                print(f"[INFO] Texto completo del ROL extraído: {rol_text}")
+                                        except Exception as rol_error:
+                                            print(f"[WARN] Error extrayendo el número de causa del ROL: {str(rol_error)}")
+
+                                        #extraer el tribunal
+                                        try:
+                                            tribunal_td = panel.query_selector("td:has-text('Tribunal:')")
+                                            if tribunal_td:
+                                                tribunal_text = tribunal_td.inner_text().replace("Tribunal:", "").strip()
+                                                print(f"[INFO] Texto limpio del Tribunal extraído: {tribunal_text}")
+                                        except Exception as tribunal_error:
+                                            print(f"[WARN] Error extrayendo el Tribunal: {str(tribunal_error)}")
+
+                                        # Intentar hacer scroll
+                                        self.page.evaluate("""
+                                            (element) => {
+                                                element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                            }
+                                        """, panel)
+                                        random_sleep(1, 2)
+                                        # Intentar captura de pantalla
+                                        detalle_panel_path = f"{carpeta_cuaderno}/Detalle_causa_{numero_causa}_Cuaderno_{texto_limpio}.png" if numero_causa else f"{carpeta_cuaderno}/Detalle_causa_Cuaderno_{texto_limpio}.png"
+                                        try:
+                                            panel.screenshot(path=detalle_panel_path, timeout=10000)
+                                            print(f"[INFO] Captura del panel guardada: {detalle_panel_path}")
+                                        except Exception as screenshot_error:
+                                            print(f"[WARN] No se pudo tomar la captura del panel: {str(screenshot_error)}")
+                                            # Intentar captura alternativa usando JavaScript
+                                            try:
+                                                self.page.evaluate("""
+                                                    (element) => {
+                                                        const canvas = document.createElement('canvas');
+                                                        const context = canvas.getContext('2d');
+                                                        const rect = element.getBoundingClientRect();
+                                                        canvas.width = rect.width;
+                                                        canvas.height = rect.height;
+                                                        context.drawWindow(
+                                                            window,
+                                                            rect.left,
+                                                            rect.top,
+                                                            rect.width,
+                                                            rect.height,
+                                                            'rgb(255,255,255)'
+                                                        );
+                                                        return canvas.toDataURL();
+                                                    }
+                                                """, panel)
+                                                print("[INFO] Captura alternativa del panel realizada")
+                                            except Exception as js_error:
+                                                print(f"[WARN] No se pudo realizar la captura alternativa: {str(js_error)}")
+                                    else:
+                                        print(f"[WARN] No se pudo procesar el panel: {str(panel_error)}")
+                                except Exception as panel_error:
+                                    print(f"[WARN] No se pudo procesar el panel: {str(panel_error)}")
+                                
+                                # Crear carpeta Historia
+                                carpeta_historia = f"{carpeta_cuaderno}/Historia"
+                                if not os.path.exists(carpeta_historia):
+                                    os.makedirs(carpeta_historia)
                                 print(f"[INFO] Movimiento nuevo encontrado - Folio: {folio}, Fecha: {fecha_tramite_str}")
                                 # Buscar el formulario de PDF
                                 pdf_form = movimiento.query_selector("form[name='form']")
@@ -1583,12 +1600,7 @@ class ControladorLupaCobranza(ControladorLupa):
                 
             movimientos_nuevos = False
             carpeta_general = tab_name.replace(' ', '_')
-            carpeta_caratulado = f"{carpeta_general}/{caratulado}"
-            
-            # Asegurar que la carpeta base existe
-            if not os.path.exists(carpeta_caratulado):
-                os.makedirs(carpeta_caratulado)
-            
+ 
             # Procesar cada opción del dropdown
             for opcion in opciones_cuaderno:
                 try:
@@ -1600,12 +1612,6 @@ class ControladorLupaCobranza(ControladorLupa):
                     # Limpiar el texto para usarlo como nombre de carpeta
                     texto_limpio = re.sub(r'[<>:"/\\|?*]', '_', texto)
                     texto_limpio = texto_limpio[:50] 
-                    
-                    # Crear carpeta para el cuaderno con nombre limpio
-                    nombre_carpeta = f"Cuaderno_{texto_limpio}"
-                    carpeta_cuaderno = f"{carpeta_caratulado}/{nombre_carpeta}"
-                    if not os.path.exists(carpeta_cuaderno):
-                        os.makedirs(carpeta_cuaderno)
                     
                     # Intentar seleccionar la opción en el dropdown con retry
                     max_retries = 3
@@ -1673,63 +1679,15 @@ class ControladorLupaCobranza(ControladorLupa):
                                 print(f"[ERROR] No se pudo seleccionar la opción después de {max_retries} intentos: {str(e)}")
                                 raise e
                             print(f"[WARN] Intento {attempt + 1} fallido: {str(e)}")
-                            random_sleep(1, 2)
-                    
-                    # Capturar panel de detalles
-                    try:
-                        tribunal_td = None
-                        print(f"  Intentando capturar panel de detalles para cuaderno {texto}...")
-                        # Esperar a que el panel esté visible
-                        panel = self.page.wait_for_selector("#modalDetalleMisCauCobranza .modal-body .panel.panel-default", timeout=5000)
-                        numero_causa = None
-                        if panel:
-                            # Extraer el número de causa del RIT
-                            try:
-                                rit_td = panel.query_selector("td:has-text('RIT')")
-                                if rit_td:
-                                    rit_text = rit_td.inner_text()
-                                    print(f"[INFO] Texto completo del RIT extraído: {rit_text}")
-
-                            except Exception as rit_error:
-                                print(f"[WARN] Error extrayendo el número de causa del RIT: {str(rit_error)}")
-                            
-                            #extraer el tribunal
-                            try:
-                                tribunal_td = panel.query_selector("td:has-text('Tribunal:')")
-                                if tribunal_td:
-                                    tribunal_text = tribunal_td.inner_text().replace("Tribunal:", "").strip()
-                                    print(f"[INFO] Texto completo del Tribunal extraído: {tribunal_text}")
-                            except Exception as tribunal_error:
-                                print(f"[WARN] Error extrayendo el Tribunal: {str(tribunal_error)}")
-                            
-                            # Intentar hacer scroll
-                            self.page.evaluate("""
-                                (element) => {
-                                    element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                                }
-                            """, panel)
-                            random_sleep(1, 2)
-                            
-                            # Guardar captura del panel
-                            detalle_panel_path = f"{carpeta_cuaderno}/Detalle_causa_{numero_causa}_Cuaderno_{texto_limpio}.png" if numero_causa else f"{carpeta_cuaderno}/Detalle_causa_Cuaderno_{texto_limpio}.png"
-                            panel.screenshot(path=detalle_panel_path)
-                            print(f"[INFO] Captura del panel guardada: {detalle_panel_path}")
-                        else:
-                            print("[WARN] No se encontró el panel de información")
-                    except Exception as panel_error:
-                        print(f"[WARN] No se pudo procesar el panel: {str(panel_error)}")
-                    
-                    # Crear carpeta Historia
-                    carpeta_historia = f"{carpeta_cuaderno}/Historia"
-                    if not os.path.exists(carpeta_historia):
-                        os.makedirs(carpeta_historia)
+                            random_sleep(1, 2)                    
                     
                     # Obtener movimientos de la tabla
                     movimientos = self.page.query_selector_all("#historiaCob table.table-bordered tbody tr")
                     print(f"[INFO] Se encontraron {len(movimientos)} movimientos en el cuaderno {texto}")
                     
-                    # Obtener fecha actual
+                    # Fecha específica según el cuaderno
                     fecha_objetivo = obtener_fecha_actual_str()
+                    print(f"[INFO] Buscando movimientos de la fecha: {fecha_objetivo}")
                     
                     for movimiento in movimientos:
                         try:
@@ -1740,6 +1698,63 @@ class ControladorLupaCobranza(ControladorLupa):
                                 fecha_tramite_str = fecha_tramite_str.split('(')[0].strip()
                             if fecha_tramite_str == fecha_objetivo:
                                 movimientos_nuevos = True
+                                #Crear carpeta Caratulado
+                                carpeta_caratulado = f"{carpeta_general}/{caratulado}"
+                                # Crear carpeta para el cuaderno con nombre limpio
+                                nombre_carpeta = f"Cuaderno_{texto_limpio}"
+                                carpeta_cuaderno = f"{carpeta_caratulado}/{nombre_carpeta}"
+                                if not os.path.exists(carpeta_cuaderno):
+                                    os.makedirs(carpeta_cuaderno)
+                                
+                                # Capturar panel de detalles
+                                try:
+                                    tribunal_td = None
+                                    print(f"  Intentando capturar panel de detalles para cuaderno {texto}...")
+                                    # Esperar a que el panel esté visible
+                                    panel = self.page.wait_for_selector("#modalDetalleMisCauCobranza .modal-body .panel.panel-default", timeout=5000)
+                                    numero_causa = None
+                                    if panel:
+                                        # Extraer el número de causa del RIT
+                                        try:
+                                            rit_td = panel.query_selector("td:has-text('RIT')")
+                                            if rit_td:
+                                                rit_text = rit_td.inner_text()
+                                                print(f"[INFO] Texto completo del RIT extraído: {rit_text}")
+
+                                        except Exception as rit_error:
+                                            print(f"[WARN] Error extrayendo el número de causa del RIT: {str(rit_error)}")
+                                        
+                                        #extraer el tribunal
+                                        try:
+                                            tribunal_td = panel.query_selector("td:has-text('Tribunal:')")
+                                            if tribunal_td:
+                                                tribunal_text = tribunal_td.inner_text().replace("Tribunal:", "").strip()
+                                                print(f"[INFO] Texto completo del Tribunal extraído: {tribunal_text}")
+                                        except Exception as tribunal_error:
+                                            print(f"[WARN] Error extrayendo el Tribunal: {str(tribunal_error)}")
+                                        
+                                        # Intentar hacer scroll
+                                        self.page.evaluate("""
+                                            (element) => {
+                                                element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                            }
+                                        """, panel)
+                                        random_sleep(1, 2)
+                                        
+                                        # Guardar captura del panel
+                                        detalle_panel_path = f"{carpeta_cuaderno}/Detalle_causa_{numero_causa}_Cuaderno_{texto_limpio}.png" if numero_causa else f"{carpeta_cuaderno}/Detalle_causa_Cuaderno_{texto_limpio}.png"
+                                        panel.screenshot(path=detalle_panel_path)
+                                        print(f"[INFO] Captura del panel guardada: {detalle_panel_path}")
+                                    else:
+                                        print("[WARN] No se encontró el panel de información")
+                                except Exception as panel_error:
+                                    print(f"[WARN] No se pudo procesar el panel: {str(panel_error)}")
+                                
+                                # Crear carpeta Historia
+                                carpeta_historia = f"{carpeta_cuaderno}/Historia"
+                                if not os.path.exists(carpeta_historia):
+                                    os.makedirs(carpeta_historia)                                
+                                
                                 print(f"[INFO] Movimiento nuevo encontrado - Folio: {folio}, Fecha: {fecha_tramite_str}")
                                 # Buscar el formulario de PDF
                                 pdf_form = movimiento.query_selector("form[name='frmDocH']")
@@ -1789,9 +1804,11 @@ class ControladorLupaCobranza(ControladorLupa):
                                             os.rename(pdf_filename_tmp, pdf_filename)
                                             pdf_path = pdf_filename
                                             preview_path = pdf_filename.replace('.pdf', '_preview.png')
+
                                             if not os.path.exists(preview_path):
                                                 print(f"[INFO] Generando vista previa del PDF para {pdf_filename}...")
                                                 generar_preview_pdf(pdf_filename, preview_path)
+
                                 else:
                                     print(f"[WARN] No hay PDF disponible para el movimiento {folio}")
                                 
