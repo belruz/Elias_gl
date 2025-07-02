@@ -11,6 +11,7 @@ import uuid
 from email.mime.image import MIMEImage
 from PIL import Image 
 
+#Script con breaks, sin fecha dinamica, headless False
 
 #Carga del env  
 dotenv_path = Path(__file__).parent / '.env'
@@ -37,9 +38,10 @@ SMTP_PORT = 587
 BASE_URL_PJUD = "https://oficinajudicialvirtual.pjud.cl/home/"
 
 # Listas y diccionarios para la navegación en PJUD
-MIS_CAUSAS_TABS = ["Corte Suprema", "Corte Apelaciones", "Civil", 
+MIS_CAUSAS_TABS = [#"Corte Suprema", "Corte Apelaciones", 
+                   "Civil", 
                    #"Laboral", "Penal", 
-                   "Cobranza", 
+                   #"Cobranza", 
                    #"Familia", "Disciplinario"
                    ]
 
@@ -144,7 +146,7 @@ def setup_browser():
     print(f"User-Agent seleccionado: {selected_user_agent}")
     
     browser = playwright.chromium.launch(
-        headless=True,  # True = sin interfaz gráfica
+        headless=False,  # True = sin interfaz gráfica
         args=[
             '--disable-blink-features=AutomationControlled',
             '--disable-dev-shm-usage',
@@ -424,21 +426,19 @@ def manejar_paginacion(page, tab_name):
             
             # Si no es la primera página, cambiar de página
             if pagina > 1:
-                # Intentar hacer clic en el número de página específico
-                pagina_selector = f'.pagination .page-item:not(.active):has-text("{pagina}")'
-                if page.is_visible(pagina_selector):
+                # Selector robusto para el botón de paginación
+                pagina_selector = f'.pagination .page-link[onclick^="pagina({pagina},"]'
+                print(f"  Buscando selector de paginación: {pagina_selector}")
+                try:
+                    page.wait_for_selector(pagina_selector, timeout=3000)
                     page.click(pagina_selector)
-                else:
-                    # Usar navegación programática
-                    page.evaluate(f'''() => {{
-                        if (typeof pagina === 'function') {{
-                            pagina({pagina}, 2);
-                        }}
-                    }}''')
-                
-                # Esperar a que cargue la nueva página
-                random_sleep(2, 3)
-                page.wait_for_load_state("networkidle")
+                    print(f"  Click en paginador: {pagina_selector}")
+                    # Esperar a que la tabla cambie
+                    random_sleep(1, 2)
+                    page.wait_for_load_state("networkidle")
+                except Exception as e:
+                    print(f"  No se pudo hacer click en paginador: {e}")
+                    continue
             
             yield pagina
             
@@ -1589,6 +1589,7 @@ class ControladorLupaCivil(ControladorLupa):
                     # Cambiar a la pestaña Escritos por Resolver
                     self.page.click('a[href="#escritosCiv"]')
                     random_sleep(1, 2)
+                    self._procesar_escritos_por_resolver(tab_name, caratulado, carpeta_cuaderno)
                     
                 except Exception as e:
                     print(f"[ERROR] Error procesando cuaderno {texto}: {str(e)}")
@@ -1600,6 +1601,60 @@ class ControladorLupaCivil(ControladorLupa):
             print(f"[ERROR] Error al verificar movimientos nuevos: {str(e)}")
             return False
 
+    def _procesar_escritos_por_resolver(self, tab_name, caratulado, carpeta_cuaderno):
+        """
+        Procesa la tabla de Escritos por Resolver en Civil y agrega nuevos movimientos.
+        """
+        try:
+            self.page.wait_for_selector('#escritosCiv table.table-bordered tbody tr', timeout=5000)
+            escritos = self.page.query_selector_all('#escritosCiv table.table-bordered tbody tr')
+            print(f"[INFO] Se encontraron {len(escritos)} escritos por resolver")
+            # Cambia la fecha_objetivo_escrito según tu lógica
+            fecha_objetivo_escrito = "27/06/2025"
+            for escrito in escritos:
+                try:
+                    fecha_ingreso = escrito.query_selector("td:nth-child(3)").inner_text().strip()
+                    tipo_escrito = escrito.query_selector("td:nth-child(4)").inner_text().strip()
+                    solicitante = escrito.query_selector("td:nth-child(5)").inner_text().strip()
+                    pdf_form = escrito.query_selector("form[name='formAneEsc']")
+                    pdf_path = None
+                    if fecha_ingreso == fecha_objetivo_escrito:
+                        carpeta_escritos = f"{carpeta_cuaderno}/EscritosPorResolver"
+                        if not os.path.exists(carpeta_escritos):
+                            os.makedirs(carpeta_escritos)
+                        # Descargar PDF si existe
+                        if pdf_form:
+                            token = pdf_form.query_selector("input[name='dtaDoc']").get_attribute("value")
+                            pdf_filename_tmp = f"{carpeta_escritos}/{fecha_ingreso} {tipo_escrito}_temp.pdf"
+                            if token:
+                                base_url = "https://oficinajudicialvirtual.pjud.cl/misCausas/civil/documentos/docuN.php?dtaDoc="
+                                original_url = base_url + token
+                                pdf_descargado = descargar_pdf_directo(original_url, pdf_filename_tmp, self.page)
+                                if pdf_descargado:
+                                    resumen_pdf = extraer_resumen_pdf(pdf_filename_tmp)
+                                    resumen_pdf_limpio = limpiar_nombre_archivo(resumen_pdf)
+                                    pdf_filename = f"{carpeta_escritos}/{fecha_ingreso} {tipo_escrito} {resumen_pdf_limpio}.pdf"
+                                    os.rename(pdf_filename_tmp, pdf_filename)
+                                    pdf_path = pdf_filename
+                        # Agregar movimiento a la lista global
+                        movimiento_pjud = MovimientoPJUD(
+                            folio=None,
+                            seccion=tab_name,
+                            caratulado=caratulado,
+                            fecha=fecha_ingreso,
+                            pdf_path=pdf_path,
+                            cuaderno="Escritos por Resolver",
+                            historia_causa_cuaderno="Escritos por Resolver"
+                        )
+                        if agregar_movimiento_sin_duplicar(movimiento_pjud):
+                            print(f"[INFO] Escrito por resolver agregado exitosamente al diccionario global")
+                        else:
+                            print(f"[INFO] El escrito ya existía en el diccionario global")
+                except Exception as e:
+                    print(f"[ERROR] Error procesando escrito por resolver: {str(e)}")
+                    continue
+        except Exception as e:
+            print(f"[WARN] No se pudo procesar la tabla de Escritos por Resolver: {str(e)}")
 
     def _obtener_opciones_cuaderno(self):
         """Obtiene todas las opciones del dropdown de cuadernos"""

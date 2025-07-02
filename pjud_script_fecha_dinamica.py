@@ -11,7 +11,7 @@ import uuid
 from email.mime.image import MIMEImage
 from PIL import Image 
 
-#script sin breaks, con fecha dinamica 
+#script sin breaks, con fecha dinamica y headless True, revisa pagina por pagina
 
 #Carga del env  
 dotenv_path = Path(__file__).parent / '.env'
@@ -38,7 +38,8 @@ SMTP_PORT = 587
 BASE_URL_PJUD = "https://oficinajudicialvirtual.pjud.cl/home/"
 
 # Listas y diccionarios para la navegación en PJUD
-MIS_CAUSAS_TABS = ["Corte Suprema", "Corte Apelaciones", "Civil", 
+MIS_CAUSAS_TABS = ["Corte Suprema", "Corte Apelaciones", 
+                   "Civil", 
                    #"Laboral", "Penal", 
                    "Cobranza", 
                    #"Familia", "Disciplinario"
@@ -149,7 +150,7 @@ def setup_browser():
     print(f"User-Agent seleccionado: {selected_user_agent}")
     
     browser = playwright.chromium.launch(
-        headless=False,  # True = sin interfaz gráfica
+        headless=True,  # True = sin interfaz gráfica
         args=[
             '--disable-blink-features=AutomationControlled',
             '--disable-dev-shm-usage',
@@ -429,21 +430,19 @@ def manejar_paginacion(page, tab_name):
             
             # Si no es la primera página, cambiar de página
             if pagina > 1:
-                # Intentar hacer clic en el número de página específico
-                pagina_selector = f'.pagination .page-item:not(.active):has-text("{pagina}")'
-                if page.is_visible(pagina_selector):
+                # Selector robusto para el botón de paginación
+                pagina_selector = f'.pagination .page-link[onclick^="pagina({pagina},"]'
+                print(f"  Buscando selector de paginación: {pagina_selector}")
+                try:
+                    page.wait_for_selector(pagina_selector, timeout=3000)
                     page.click(pagina_selector)
-                else:
-                    # Usar navegación programática
-                    page.evaluate(f'''() => {{
-                        if (typeof pagina === 'function') {{
-                            pagina({pagina}, 2);
-                        }}
-                    }}''')
-                
-                # Esperar a que cargue la nueva página
-                random_sleep(2, 3)
-                page.wait_for_load_state("networkidle")
+                    print(f"  Click en paginador: {pagina_selector}")
+                    # Esperar a que la tabla cambie
+                    random_sleep(1, 2)
+                    page.wait_for_load_state("networkidle")
+                except Exception as e:
+                    print(f"  No se pudo hacer click en paginador: {e}")
+                    continue
             
             yield pagina
             
