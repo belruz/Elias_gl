@@ -12,3 +12,6 @@ Familia/
 
 #Logs
 *.log
+
+#entorno virtual
+venv/
