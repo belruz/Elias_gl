@@ -11,6 +11,7 @@ import uuid
 from email.mime.image import MIMEImage
 from PIL import Image 
 
+#script sin breaks, con fecha dinamica 
 
 #Carga del env  
 dotenv_path = Path(__file__).parent / '.env'
