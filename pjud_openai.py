@@ -20,8 +20,9 @@ import PyPDF2
 from PIL import Image
 import openai
 
-# --- Configuración inicial ---
-load_dotenv()
+#  Configuración inicial
+dotenv_path = Path(__file__).parent / '.env'
+load_dotenv(dotenv_path=dotenv_path, override=True)
 
 # Configuración de logging
 logging.basicConfig(
@@ -59,7 +60,7 @@ MIS_CAUSAS_TABS = [
     "Disciplinario"
 ]
 
-# --- Clase MovimientoPJUD ---
+# Clase MovimientoPJUD 
 class MovimientoPJUD:
     def __init__(self, folio, seccion, caratulado, fecha, tribunal=None, corte=None, libro=None, rit=None, rol=None, pdf_path=None, cuaderno=None, archivos_apelaciones=None, historia_causa_cuaderno=None):
         self.folio = folio
@@ -118,7 +119,7 @@ class MovimientoPJUD:
     def identificador_causa(self):
         return self.rol or self.rit or self.libro
 
-# --- Funciones utilitarias ---
+#Funciones utilitarias 
 def obtener_fecha_actual_str():
     return datetime.datetime.now().strftime("%d/%m/%Y")
 
@@ -139,7 +140,7 @@ def agregar_movimiento_sin_duplicar(movimiento):
         return True
     return False
 
-# --- Configuración de navegador ---
+#Configuración de navegador
 def setup_browser():
     playwright = sync_playwright().start()
     selected_user_agent = random.choice([
@@ -209,7 +210,7 @@ def setup_browser():
     
     return playwright, browser, page
 
-# --- Simulación de comportamiento humano ---
+# Simulación de comportamiento humano 
 def simulate_human_behavior(page):
     if random.random() < 0.3:
         page.mouse.wheel(0, random.randint(100, 500))
@@ -220,7 +221,7 @@ def simulate_human_behavior(page):
         page.mouse.move(x, y)
         random_sleep(0.5, 1.5)
 
-# --- Funciones de navegación ---
+# Funciones de navegación
 def login(page, username, password):
     try:
         print("Esperando página de Clave Única...")
@@ -235,6 +236,7 @@ def login(page, username, password):
         page.fill('#pword', password)
         random_sleep(1, 2)
         
+        page.keyboard.press('Enter')
         page.keyboard.press('Enter')
         random_sleep(2, 4)
         
@@ -257,7 +259,7 @@ def navigate_to_mis_causas(page):
         print(f"Error al navegar a 'Mis Causas': {str(e)}")
         return False
 
-# --- Funciones de procesamiento de PDFs ---
+# Funciones de procesamiento de PDFs
 def descargar_pdf_directo(pdf_url, pdf_filename, page):
     try:
         if os.path.exists(pdf_filename):
@@ -331,7 +333,7 @@ def generar_preview_pdf(pdf_path, preview_path, width=400):
     except Exception as e:
         print(f"[ERROR] Error generando preview: {e}")
 
-# --- Funciones de OpenAI ---
+# Funciones de OpenAI
 def procesar_html_con_openai(html, tab_name):
     """Envía HTML a OpenAI para extracción estructurada de datos"""
     try:
@@ -439,7 +441,7 @@ def procesar_modal_generico_con_openai(html, caratulado, cuaderno, tab_name):
         logging.error(f"Error procesando modal {tab_name} con OpenAI: {str(e)}")
         return {"movimientos": []}
 
-# --- Manejo de paginación ---
+# Manejo de paginación 
 def manejar_paginacion(page, tab_name):
     """Maneja la paginación en la tabla de causas"""
     try:
@@ -504,7 +506,7 @@ def manejar_paginacion(page, tab_name):
         print(f"  Error en paginación: {str(e)}")
         yield 1
 
-# --- Funciones de procesamiento principal ---
+#  Funciones de procesamiento principal 
 def procesar_pestana_con_openai(page, tab_name):
     """Procesa una pestaña usando OpenAI para detección de causas"""
     try:
@@ -602,7 +604,7 @@ def procesar_cuadernos_modal(page, carpeta_caratulado, causa, tab_name):
         }''')
         
         if not opciones:
-            print("    ℹ️ No se encontraron cuadernos, procesando como modal simple")
+            print("No se encontraron cuadernos, procesando como modal simple")
             procesar_modal_simple(page, carpeta_caratulado, causa, tab_name)
             return
             
@@ -744,7 +746,7 @@ def procesar_modal_simple(page, carpeta_caratulado, causa, tab_name):
     except Exception as e:
         print(f"    ✗ Error procesando modal simple: {str(e)}")
 
-# --- Navegación por pestañas ---
+# Navegación por pestañas 
 def navigate_mis_causas_tabs(page):
     """Navega por pestañas usando OpenAI para detección de causas"""
     print("\n--- Navegando por pestañas con OpenAI ---")
@@ -766,7 +768,7 @@ def navigate_mis_causas_tabs(page):
     
     print("\n--- Procesamiento con OpenAI completado ---")
 
-# --- Funciones de correo electrónico ---
+#  Funciones de correo electrónico 
 def construir_cuerpo_html(movimientos, imagenes_cid=None):
     if not movimientos:
         return """
@@ -894,7 +896,7 @@ def enviar_correo(movimientos=None, asunto="Notificación de Sistema de Poder Ju
         logging.error(f"Error enviando correo: {str(e)}")
         return False
 
-# --- Función principal ---
+#  Función principal 
 def automatizar_poder_judicial(page, username, password):
     try:
         print("\n=== AUTOMATIZACIÓN DEL PODER JUDICIAL ===")
@@ -928,7 +930,7 @@ def automatizar_poder_judicial(page, username, password):
         print(f"Error principal: {str(e)}")
         return False
 
-# --- Ejecución principal ---
+#  Ejecución principal 
 def main():
     # Verificar si es fin de semana
     if datetime.datetime.now().weekday() >= 5:

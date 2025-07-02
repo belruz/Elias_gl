@@ -386,6 +386,72 @@ def generar_preview_pdf(pdf_path, preview_path, width=400):
     except Exception as e:
         print(f"[ERROR] Error generando preview: {e}")
         
+        
+# Manejo de paginación 
+def manejar_paginacion(page, tab_name):
+    """Maneja la paginación en la tabla de causas"""
+    try:
+        print(f"  Iniciando paginación para {tab_name}...")
+        
+        # Detectar selector de total de registros según pestaña
+        total_selectors = {
+            "Corte Apelaciones": '.loadTotalApe b',
+            "Corte Suprema": '.loadTotalSup b',
+            "Civil": '.loadTotalCiv b',
+            "Laboral": '.loadTotalLab b',
+            "Penal": '.loadTotalPen b',
+            "Cobranza": '.loadTotalCob b',
+            "Familia": '.loadTotalFam b',
+            "Disciplinario": '.loadTotalDis b'
+        }
+        
+        total_selector = total_selectors.get(tab_name, '.loadTotalApe b')
+        
+        # Obtener el número total de registros
+        total_registros = page.evaluate(f'''() => {{
+            const el = document.querySelector('{total_selector}');
+            return el ? parseInt(el.textContent.replace(/\\D/g, '')) : 0;
+        }}''')
+        
+        if not total_registros or total_registros <= 15:
+            print("  Menos de 15 registros, no se requiere paginación")
+            yield 1
+            return
+            
+        # Calcular número de páginas (15 registros por página)
+        total_paginas = (total_registros + 14) // 15
+        print(f"  Total de registros: {total_registros} | Páginas: {total_paginas}")
+        
+        # Procesar cada página
+        for pagina in range(1, total_paginas + 1):
+            print(f"  Procesando página {pagina}/{total_paginas}")
+            
+            # Si no es la primera página, cambiar de página
+            if pagina > 1:
+                # Intentar hacer clic en el número de página específico
+                pagina_selector = f'.pagination .page-item:not(.active):has-text("{pagina}")'
+                if page.is_visible(pagina_selector):
+                    page.click(pagina_selector)
+                else:
+                    # Usar navegación programática
+                    page.evaluate(f'''() => {{
+                        if (typeof pagina === 'function') {{
+                            pagina({pagina}, 2);
+                        }}
+                    }}''')
+                
+                # Esperar a que cargue la nueva página
+                random_sleep(2, 3)
+                page.wait_for_load_state("networkidle")
+            
+            yield pagina
+            
+        print("  Paginación completada")
+        
+    except Exception as e:
+        print(f"  Error en paginación: {str(e)}")
+        yield 1
+        
 #Lupa se refiere a el icon de lupa para abrir cada causa 
 #esta es la clase base o general para los controladores de lupas
 class ControladorLupa:
@@ -405,39 +471,41 @@ class ControladorLupa:
     def manejar(self, tab_name):
         try:
             print(f"  Procesando lupa tipo '{self.__class__.__name__}' en pestaña '{tab_name}'...")
-            lupas = self._obtener_lupas()
-            if not lupas:
-                print("  No se encontraron lupas en la pestaña.")
-                return False
-            
-            for idx, lupa_link in enumerate(lupas):
-                try:
-                    fila = lupa_link.evaluate_handle('el => el.closest("tr")')
-                    tds = fila.query_selector_all('td')
-                    if len(tds) < 4:
+            for pagina in manejar_paginacion(self.page, tab_name):
+                
+                lupas = self._obtener_lupas()
+                if not lupas:
+                    print("  No se encontraron lupas en la pestaña.")
+                    return False
+                
+                for idx, lupa_link in enumerate(lupas):
+                    try:
+                        fila = lupa_link.evaluate_handle('el => el.closest("tr")')
+                        tds = fila.query_selector_all('td')
+                        if len(tds) < 4:
+                            continue
+                        # Usar la columna 4 (índice 3) para el caratulado
+                        caratulado = tds[3].inner_text().strip()
+                        print(f"  Procesando lupa {idx+1} de {len(lupas)} (caratulado: {caratulado})")
+                        
+                        lupa_link.scroll_into_view_if_needed()
+                        random_sleep(0.5, 1)
+                        lupa_link.click()
+                        random_sleep(1, 2)
+                        self._verificar_modal()
+                        self._verificar_tabla()
+                        movimientos_nuevos = self._procesar_contenido(tab_name, caratulado)
+                        self._cambiar_pestana_modal(caratulado, tab_name)
+                        self._cerrar_modal()
+                        
+                        #break para procesar solo la primera lupa 
+                        #break
+                        
+                    except Exception as e:
+                        print(f"  Error procesando la lupa {idx+1}: {str(e)}")
+                        self._manejar_error(e)
+                        self._cerrar_modal()
                         continue
-                    # Usar la columna 4 (índice 3) para el caratulado
-                    caratulado = tds[3].inner_text().strip()
-                    print(f"  Procesando lupa {idx+1} de {len(lupas)} (caratulado: {caratulado})")
-                    
-                    lupa_link.scroll_into_view_if_needed()
-                    random_sleep(0.5, 1)
-                    lupa_link.click()
-                    random_sleep(1, 2)
-                    self._verificar_modal()
-                    self._verificar_tabla()
-                    movimientos_nuevos = self._procesar_contenido(tab_name, caratulado)
-                    self._cambiar_pestana_modal(caratulado, tab_name)
-                    self._cerrar_modal()
-                    
-                    #break para procesar solo la primera lupa 
-                    #break
-                    
-                except Exception as e:
-                    print(f"  Error procesando la lupa {idx+1}: {str(e)}")
-                    self._manejar_error(e)
-                    self._cerrar_modal()
-                    continue
             return True
         except Exception as e:
             self._manejar_error(e)
@@ -850,38 +918,39 @@ class ControladorLupaSuprema(ControladorLupa):
     def manejar(self, tab_name):
         try:
             print(f"  Procesando lupa tipo '{self.__class__.__name__}' en pestaña '{tab_name}'...")
-            lupas = self._obtener_lupas()
-            if not lupas:
-                print("  No se encontraron lupas en la pestaña.")
-                return False
-            
-            for idx, lupa_link in enumerate(lupas):
-                try:
-                    fila = lupa_link.evaluate_handle('el => el.closest("tr")')
-                    tds = fila.query_selector_all('td')
-                    if len(tds) < 3:
+            for pagina in manejar_paginacion(self.page, tab_name):
+                lupas = self._obtener_lupas()
+                if not lupas:
+                    print("  No se encontraron lupas en la pestaña.")
+                    return False
+                
+                for idx, lupa_link in enumerate(lupas):
+                    try:
+                        fila = lupa_link.evaluate_handle('el => el.closest("tr")')
+                        tds = fila.query_selector_all('td')
+                        if len(tds) < 3:
+                            continue
+                        caratulado = tds[2].inner_text().strip()
+                        corte_text = tds[5].inner_text().strip() 
+                        print(f"  Procesando lupa {idx+1} de {len(lupas)} (caratulado: {caratulado})")
+                        
+                        lupa_link.scroll_into_view_if_needed()
+                        random_sleep(0.5, 1)
+                        lupa_link.click()
+                        random_sleep(1, 2)
+                        self._verificar_modal()
+                        self._verificar_tabla()
+                        movimientos_nuevos = self._procesar_contenido_suprema(tab_name, caratulado, corte_text)
+                        self._cerrar_modal()
+                        
+                        #break para procesar solo la primera lupa
+                        #break
+                        
+                    except Exception as e:
+                        print(f"  Error procesando la lupa {idx+1}: {str(e)}")
+                        self._manejar_error(e)
+                        self._cerrar_modal()
                         continue
-                    caratulado = tds[2].inner_text().strip()
-                    corte_text = tds[5].inner_text().strip() 
-                    print(f"  Procesando lupa {idx+1} de {len(lupas)} (caratulado: {caratulado})")
-                    
-                    lupa_link.scroll_into_view_if_needed()
-                    random_sleep(0.5, 1)
-                    lupa_link.click()
-                    random_sleep(1, 2)
-                    self._verificar_modal()
-                    self._verificar_tabla()
-                    movimientos_nuevos = self._procesar_contenido_suprema(tab_name, caratulado, corte_text)
-                    self._cerrar_modal()
-                    
-                    #break para procesar solo la primera lupa
-                    #break
-                    
-                except Exception as e:
-                    print(f"  Error procesando la lupa {idx+1}: {str(e)}")
-                    self._manejar_error(e)
-                    self._cerrar_modal()
-                    continue
             return True
         except Exception as e:
             self._manejar_error(e)
@@ -1034,41 +1103,42 @@ class ControladorLupaApelacionesPrincipal(ControladorLupa):
     def manejar(self, tab_name):
         try:
             print(f"  Procesando lupa tipo '{self.__class__.__name__}' en pestaña '{tab_name}'...")
-            lupas = self._obtener_lupas()
-            if not lupas:
-                print("  No se encontraron lupas en la pestaña.")
-                return False
-            
-            for idx, lupa_link in enumerate(lupas):
-                try:
-                    fila = lupa_link.evaluate_handle('el => el.closest("tr")')
-                    tds = fila.query_selector_all('td')
-                    if len(tds) < 4:
+            for pagina in manejar_paginacion(self.page, tab_name):
+                lupas = self._obtener_lupas()
+                if not lupas:
+                    print("  No se encontraron lupas en la pestaña.")
+                    return False
+                
+                for idx, lupa_link in enumerate(lupas):
+                    try:
+                        fila = lupa_link.evaluate_handle('el => el.closest("tr")')
+                        tds = fila.query_selector_all('td')
+                        if len(tds) < 4:
+                            continue
+                        # Usar la columna 4 (índice 3) para el caratulado
+                        caratulado = tds[3].inner_text().strip()
+                        #extraer corte
+                        corte_text = tds[2].inner_text().replace("Corte:", "").strip()
+                        print(f" Corte: {corte_text} ")
+                        print(f"  Procesando lupa {idx+1} de {len(lupas)} (caratulado: {caratulado})")
+                        
+                        lupa_link.scroll_into_view_if_needed()
+                        random_sleep(0.5, 1)
+                        lupa_link.click()
+                        random_sleep(1, 2)
+                        self._verificar_modal()
+                        self._verificar_tabla()
+                        movimientos_nuevos = self._procesar_contenido(tab_name, caratulado,corte_text)
+                        self._cerrar_modal()
+                        
+                        #break para procesar solo la primera lupa
+                        #break
+                        
+                    except Exception as e:
+                        print(f"  Error procesando la lupa {idx+1}: {str(e)}")
+                        self._manejar_error(e)
+                        self._cerrar_modal()
                         continue
-                    # Usar la columna 4 (índice 3) para el caratulado
-                    caratulado = tds[3].inner_text().strip()
-                    #extraer corte
-                    corte_text = tds[2].inner_text().replace("Corte:", "").strip()
-                    print(f" Corte: {corte_text} ")
-                    print(f"  Procesando lupa {idx+1} de {len(lupas)} (caratulado: {caratulado})")
-                    
-                    lupa_link.scroll_into_view_if_needed()
-                    random_sleep(0.5, 1)
-                    lupa_link.click()
-                    random_sleep(1, 2)
-                    self._verificar_modal()
-                    self._verificar_tabla()
-                    movimientos_nuevos = self._procesar_contenido(tab_name, caratulado,corte_text)
-                    self._cerrar_modal()
-                    
-                    #break para procesar solo la primera lupa
-                    #break
-                    
-                except Exception as e:
-                    print(f"  Error procesando la lupa {idx+1}: {str(e)}")
-                    self._manejar_error(e)
-                    self._cerrar_modal()
-                    continue
             return True
         except Exception as e:
             self._manejar_error(e)
@@ -1153,16 +1223,11 @@ class ControladorLupaApelacionesPrincipal(ControladorLupa):
                 return False
                 
             movimientos_nuevos = False
-            
-            fecha_objetivo = obtener_fecha_actual_str()
-            print(f"[INFO] Buscando movimientos de la fecha: {fecha_objetivo}")
-            
             for movimiento in movimientos:
                 try:
                     folio = movimiento.query_selector("td:nth-child(1)").inner_text().strip()
                     fecha_tramite_str = movimiento.query_selector("td:nth-child(6)").inner_text().strip() 
-                    if fecha_tramite_str == fecha_objetivo:
-                        print(f"[INFO] Buscando movimientos de la fecha: {fecha_objetivo}")
+                    if fecha_tramite_str == obtener_fecha_actual_str():
                         movimientos_nuevos = True
                         carpeta_general = tab_name.replace(' ', '_')
                         carpeta_caratulado = f"{carpeta_general}/{caratulado}"
@@ -1362,7 +1427,6 @@ class ControladorLupaCivil(ControladorLupa):
                     
                     # Fecha específica según el cuaderno
                     fecha_objetivo = obtener_fecha_actual_str()
-                    print(f"[INFO] Buscando movimientos de la fecha: {fecha_objetivo}")
                     
                     for movimiento in movimientos:
                         try:
@@ -1687,7 +1751,6 @@ class ControladorLupaCobranza(ControladorLupa):
                     
                     # Fecha específica según el cuaderno
                     fecha_objetivo = obtener_fecha_actual_str()
-                    print(f"[INFO] Buscando movimientos de la fecha: {fecha_objetivo}")
                     
                     for movimiento in movimientos:
                         try:
