@@ -390,7 +390,7 @@ def manejar_paginacion(page, tab_name):
     """Maneja la paginación en la tabla de causas"""
     try:
         print(f"  Iniciando paginación para {tab_name}...")
-        
+
         # Detectar selector de total de registros según pestaña
         total_selectors = {
             "Corte Apelaciones": '.loadTotalApe b',
@@ -402,52 +402,64 @@ def manejar_paginacion(page, tab_name):
             "Familia": '.loadTotalFam b',
             "Disciplinario": '.loadTotalDis b'
         }
-        
+
         total_selector = total_selectors.get(tab_name, '.loadTotalApe b')
-        
+
         # Obtener el número total de registros
         total_registros = page.evaluate(f'''() => {{
             const el = document.querySelector('{total_selector}');
             return el ? parseInt(el.textContent.replace(/\\D/g, '')) : 0;
         }}''')
-        
+
         if not total_registros or total_registros <= 15:
             print("  Menos de 15 registros, no se requiere paginación")
             yield 1
             return
-            
+
         # Calcular número de páginas (15 registros por página)
         total_paginas = (total_registros + 14) // 15
         print(f"  Total de registros: {total_registros} | Páginas: {total_paginas}")
-        
+
         # Procesar cada página
         for pagina in range(1, total_paginas + 1):
             print(f"  Procesando página {pagina}/{total_paginas}")
-            
+
             # Si no es la primera página, cambiar de página
             if pagina > 1:
-                # Selector robusto para el botón de paginación
                 pagina_selector = f'.pagination .page-link[onclick^="pagina({pagina},"]'
                 print(f"  Buscando selector de paginación: {pagina_selector}")
                 try:
-                    page.wait_for_selector(pagina_selector, timeout=3000)
-                    page.click(pagina_selector)
-                    print(f"  Click en paginador: {pagina_selector}")
-                    # Esperar a que la tabla cambie
-                    random_sleep(1, 2)
-                    page.wait_for_load_state("networkidle")
+                    paginadores = page.query_selector_all(pagina_selector)
+                    clicked = False
+                    for pag in paginadores:
+                        try:
+                            classes = pag.get_attribute("class") or ""
+                            # Verifica visibilidad real y que no sea el actual ni deshabilitado
+                            style = pag.evaluate("el => window.getComputedStyle(el).display")
+                            if pag.is_visible() and style != "none" and "disabled" not in classes and "active" not in classes:
+                                pag.click()
+                                clicked = True
+                                print(f"  Click en paginador: {pagina_selector}")
+                                random_sleep(1, 2)
+                                page.wait_for_load_state("networkidle")
+                                break
+                        except Exception:
+                            continue
+                    if not clicked:
+                        print(f"  No se encontró un paginador visible y habilitado para la página {pagina}")
+                        continue
                 except Exception as e:
                     print(f"  No se pudo hacer click en paginador: {e}")
                     continue
-            
+            random_sleep(0.5, 1.5)  # Pequeña pausa para asegurar carga
             yield pagina
-            
+
         print("  Paginación completada")
-        
+
     except Exception as e:
         print(f"  Error en paginación: {str(e)}")
         yield 1
-        
+
 #Lupa se refiere a el icon de lupa para abrir cada causa 
 #esta es la clase base o general para los controladores de lupas
 class ControladorLupa:
