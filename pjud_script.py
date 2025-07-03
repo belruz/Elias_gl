@@ -673,7 +673,17 @@ class ControladorLupa:
                                         # Nombre final
                                         pdf_filename = f"{carpeta_caratulado}/{fecha_tramite_pdf} {libro_pdf} {resumen_pdf_limpio}.pdf"
                                         # Renombrar el archivo temporal al nombre final
-                                        os.rename(pdf_filename_tmp, pdf_filename)
+                                        try:
+                                            os.rename(pdf_filename_tmp, pdf_filename)
+                                        except Exception as e:
+                                            print(f"[WARN] No se pudo renombrar el archivo temporal: {pdf_filename_tmp} -> {pdf_filename} - {e}")
+                                        finally:
+                                            if os.path.exists(pdf_filename_tmp):
+                                                try:
+                                                    os.remove(pdf_filename_tmp)
+                                                    print(f"[INFO] Archivo temporal eliminado: {pdf_filename_tmp}")
+                                                except Exception as e:
+                                                    print(f"[WARN] No se pudo eliminar el archivo temporal: {pdf_filename_tmp} - {e}")                                        
                                         pdf_path = pdf_filename
                                         preview_path = pdf_filename.replace('.pdf', '_preview.png')
 
@@ -1053,7 +1063,17 @@ class ControladorLupaSuprema(ControladorLupa):
                                         resumen_pdf = extraer_resumen_pdf(pdf_filename_tmp)
                                         resumen_pdf_limpio = limpiar_nombre_archivo(resumen_pdf)
                                         pdf_filename = f"{carpeta_caratulado}/{fecha_tramite_pdf} {libro_pdf} {resumen_pdf_limpio}.pdf"
-                                        os.rename(pdf_filename_tmp, pdf_filename)
+                                        try:
+                                            os.rename(pdf_filename_tmp, pdf_filename)
+                                        except Exception as e:
+                                            print(f"[WARN] No se pudo renombrar el archivo temporal: {pdf_filename_tmp} -> {pdf_filename} - {e}")
+                                        finally:
+                                            if os.path.exists(pdf_filename_tmp):
+                                                try:
+                                                    os.remove(pdf_filename_tmp)
+                                                    print(f"[INFO] Archivo temporal eliminado: {pdf_filename_tmp}")
+                                                except Exception as e:
+                                                    print(f"[WARN] No se pudo eliminar el archivo temporal: {pdf_filename_tmp} - {e}")
                                         pdf_path = pdf_filename
                                         preview_path = pdf_filename.replace('.pdf', '_preview.png')
                                         # Generar preview si no existe
@@ -1281,7 +1301,17 @@ class ControladorLupaApelacionesPrincipal(ControladorLupa):
                                     resumen_pdf = extraer_resumen_pdf(pdf_filename_tmp)
                                     resumen_pdf_limpio = limpiar_nombre_archivo(resumen_pdf)
                                     pdf_filename = f"{carpeta_caratulado}/{fecha_tramite_pdf} {libro_pdf} {resumen_pdf_limpio}.pdf"
-                                    os.rename(pdf_filename_tmp, pdf_filename)
+                                    try:
+                                        os.rename(pdf_filename_tmp, pdf_filename)
+                                    except Exception as e:
+                                        print(f"[WARN] No se pudo renombrar el archivo temporal: {pdf_filename_tmp} -> {pdf_filename} - {e}")
+                                    finally:
+                                        if os.path.exists(pdf_filename_tmp):
+                                            try:
+                                                os.remove(pdf_filename_tmp)
+                                                print(f"[INFO] Archivo temporal eliminado: {pdf_filename_tmp}")
+                                            except Exception as e:
+                                                print(f"[WARN] No se pudo eliminar el archivo temporal: {pdf_filename_tmp} - {e}")
                                     pdf_path = pdf_filename
                                     preview_path = pdf_filename.replace('.pdf', '_preview.png')
                                     # Generar vista previa si no existe
@@ -1567,7 +1597,17 @@ class ControladorLupaCivil(ControladorLupa):
                                             if len(pdf_filename) > max_filename_len:
                                                 pdf_filename = base[:max_filename_len - len(ext)] + ext
                                             #renombrar el archivo temporal al nombre final
-                                            os.rename(pdf_filename_tmp, pdf_filename)
+                                            try:
+                                                os.rename(pdf_filename_tmp, pdf_filename)
+                                            except Exception as e:
+                                                print(f"[WARN] No se pudo renombrar el archivo temporal: {pdf_filename_tmp} -> {pdf_filename} - {e}")
+                                            finally:
+                                                if os.path.exists(pdf_filename_tmp):
+                                                    try:
+                                                        os.remove(pdf_filename_tmp)
+                                                        print(f"[INFO] Archivo temporal eliminado: {pdf_filename_tmp}")
+                                                    except Exception as e:
+                                                        print(f"[WARN] No se pudo eliminar el archivo temporal: {pdf_filename_tmp} - {e}")
                                             pdf_path = pdf_filename
                                             preview_path = pdf_filename.replace('.pdf', '_preview.png')
                                             if not os.path.exists(preview_path):
@@ -1663,7 +1703,17 @@ class ControladorLupaCivil(ControladorLupa):
                                     base, ext = os.path.splitext(pdf_filename)
                                     if len(pdf_filename) > max_filename_len:
                                         pdf_filename = base[:max_filename_len - len(ext)] + ext
-                                    os.rename(pdf_filename_tmp, pdf_filename)
+                                    try:
+                                        os.rename(pdf_filename_tmp, pdf_filename)
+                                    except Exception as e:
+                                        print(f"[WARN] No se pudo renombrar el archivo temporal: {pdf_filename_tmp} -> {pdf_filename} - {e}")
+                                    finally:
+                                        if os.path.exists(pdf_filename_tmp):
+                                            try:
+                                                os.remove(pdf_filename_tmp)
+                                                print(f"[INFO] Archivo temporal eliminado: {pdf_filename_tmp}")
+                                            except Exception as e:
+                                                print(f"[WARN] No se pudo eliminar el archivo temporal: {pdf_filename_tmp} - {e}")
                                     pdf_path = pdf_filename
                                     # Generar preview del PDF si no existe
                                     preview_path = pdf_filename.replace('.pdf', '_preview.png')
@@ -1947,7 +1997,17 @@ class ControladorLupaCobranza(ControladorLupa):
                                             if len(pdf_filename) > max_filename_len:
                                                 pdf_filename = base[:max_filename_len - len(ext)] + ext
                                             #renombrar el archivo temporal al nombre final
-                                            os.rename(pdf_filename_tmp, pdf_filename)
+                                            try:
+                                                os.rename(pdf_filename_tmp, pdf_filename)
+                                            except Exception as e:
+                                                print(f"[WARN] No se pudo renombrar el archivo temporal: {pdf_filename_tmp} -> {pdf_filename} - {e}")
+                                            finally:
+                                                if os.path.exists(pdf_filename_tmp):
+                                                    try:
+                                                        os.remove(pdf_filename_tmp)
+                                                        print(f"[INFO] Archivo temporal eliminado: {pdf_filename_tmp}")
+                                                    except Exception as e:
+                                                        print(f"[WARN] No se pudo eliminar el archivo temporal: {pdf_filename_tmp} - {e}")
                                             pdf_path = pdf_filename
                                             preview_path = pdf_filename.replace('.pdf', '_preview.png')
 
