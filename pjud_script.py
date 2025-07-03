@@ -1420,7 +1420,13 @@ class ControladorLupaCivil(ControladorLupa):
                     print(f"[INFO] Se encontraron {len(movimientos)} movimientos en el cuaderno {texto}")
                     
                     # Fecha específica según el cuaderno
-                    fecha_objetivo = "07/10/2024" if "Principal" in texto else "14/03/2024"
+                    fecha_objetivo = "16/06/2025" 
+                    
+                    #crear carpeta para el caratulado
+                    carpeta_caratulado = f"{carpeta_general}/{caratulado}"                                
+                    # Crear carpeta para el cuaderno con nombre limpio
+                    nombre_carpeta = f"Cuaderno_{texto_limpio}"
+                    carpeta_cuaderno = f"{carpeta_caratulado}/{nombre_carpeta}"
                     
                     for movimiento in movimientos:
                         try:
@@ -1431,11 +1437,6 @@ class ControladorLupaCivil(ControladorLupa):
                                 fecha_tramite_str = fecha_tramite_str.split('(')[0].strip()
                             if fecha_tramite_str == fecha_objetivo:
                                 movimientos_nuevos = True
-                                #crear carpeta para el caratulado
-                                carpeta_caratulado = f"{carpeta_general}/{caratulado}"                                
-                                # Crear carpeta para el cuaderno con nombre limpio
-                                nombre_carpeta = f"Cuaderno_{texto_limpio}"
-                                carpeta_cuaderno = f"{carpeta_caratulado}/{nombre_carpeta}"
                                 if not os.path.exists(carpeta_cuaderno):
                                     os.makedirs(carpeta_cuaderno)
                                 # Capturar panel de detalles
@@ -1606,7 +1607,11 @@ class ControladorLupaCivil(ControladorLupa):
         Procesa la tabla de Escritos por Resolver en Civil y agrega nuevos movimientos.
         """
         try:
-            self.page.wait_for_selector('#escritosCiv table.table-bordered tbody tr', timeout=5000)
+            # Asegura que la pestaña esté activa
+            self.page.click('a[href="#escritosCiv"]')
+            self.page.wait_for_selector('#escritosCiv.active.in', timeout=5000)
+            # Espera a que la tabla esté presente (aunque esté vacía)
+            self.page.wait_for_selector('#escritosCiv table.table-bordered tbody', timeout=5000, state="attached")
             escritos = self.page.query_selector_all('#escritosCiv table.table-bordered tbody tr')
             print(f"[INFO] Se encontraron {len(escritos)} escritos por resolver")
             # Cambia la fecha_objetivo_escrito según tu lógica
@@ -1621,11 +1626,14 @@ class ControladorLupaCivil(ControladorLupa):
                     if fecha_ingreso == fecha_objetivo_escrito:
                         carpeta_escritos = f"{carpeta_cuaderno}/EscritosPorResolver"
                         if not os.path.exists(carpeta_escritos):
-                            os.makedirs(carpeta_escritos)
+                            os.makedirs(carpeta_escritos, exist_ok=True)
                         # Descargar PDF si existe
                         if pdf_form:
                             token = pdf_form.query_selector("input[name='dtaDoc']").get_attribute("value")
-                            pdf_filename_tmp = f"{carpeta_escritos}/{fecha_ingreso} {tipo_escrito}_temp.pdf"
+                            # Limpiar fecha y tipo para el nombre del archivo
+                            fecha_ingreso_limpia = limpiar_nombre_archivo(fecha_ingreso.replace("/", "-"))
+                            tipo_escrito_limpio = limpiar_nombre_archivo(tipo_escrito)
+                            pdf_filename_tmp = f"{carpeta_escritos}/{fecha_ingreso_limpia} {tipo_escrito_limpio}_temp.pdf"
                             if token:
                                 base_url = "https://oficinajudicialvirtual.pjud.cl/misCausas/civil/documentos/docuN.php?dtaDoc="
                                 original_url = base_url + token
@@ -1633,9 +1641,23 @@ class ControladorLupaCivil(ControladorLupa):
                                 if pdf_descargado:
                                     resumen_pdf = extraer_resumen_pdf(pdf_filename_tmp)
                                     resumen_pdf_limpio = limpiar_nombre_archivo(resumen_pdf)
-                                    pdf_filename = f"{carpeta_escritos}/{fecha_ingreso} {tipo_escrito} {resumen_pdf_limpio}.pdf"
+                                    pdf_filename = f"{carpeta_escritos}/{fecha_ingreso_limpia} {tipo_escrito_limpio} {resumen_pdf_limpio}.pdf"
+                                    # Evitar sobrescribir archivos existentes
+                                    if os.path.exists(pdf_filename):
+                                        print(f"[WARN] El archivo final {pdf_filename} ya existe. Se eliminará para evitar conflicto.")
+                                        os.remove(pdf_filename)
+                                    # Limitar el nombre del archivo si es demasiado largo
+                                    max_filename_len = 156
+                                    base, ext = os.path.splitext(pdf_filename)
+                                    if len(pdf_filename) > max_filename_len:
+                                        pdf_filename = base[:max_filename_len - len(ext)] + ext
                                     os.rename(pdf_filename_tmp, pdf_filename)
                                     pdf_path = pdf_filename
+                                    # Generar preview del PDF si no existe
+                                    preview_path = pdf_filename.replace('.pdf', '_preview.png')
+                                    if not os.path.exists(preview_path):
+                                        print(f"[INFO] Generando vista previa del PDF para {pdf_filename}...")
+                                        generar_preview_pdf(pdf_filename, preview_path)
                         # Agregar movimiento a la lista global
                         movimiento_pjud = MovimientoPJUD(
                             folio=None,
@@ -1654,8 +1676,8 @@ class ControladorLupaCivil(ControladorLupa):
                     print(f"[ERROR] Error procesando escrito por resolver: {str(e)}")
                     continue
         except Exception as e:
-            print(f"[WARN] No se pudo procesar la tabla de Escritos por Resolver: {str(e)}")
-
+            print(f"[WARN] No se pudo procesar la tabla de Escritos por Resolver: {str(e)}") 
+    
     def _obtener_opciones_cuaderno(self):
         """Obtiene todas las opciones del dropdown de cuadernos"""
         try:
