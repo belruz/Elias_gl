@@ -2428,13 +2428,13 @@ def construir_cuerpo_html(movimientos, imagenes_cid=None):
                 identificador_limpio = f"{i}"
             html += f"""
                 <div class="movimiento">
-                    <h2>{identificador_limpio}, {mov.caratulado}{', ' + mov.corte if mov.corte else (', ' + mov.tribunal if mov.tribunal else '')}:</h2>
+                    <h2 style="text-align: center;">{identificador_limpio}, {mov.caratulado}{', ' + mov.corte if mov.corte else (', ' + mov.tribunal if mov.tribunal else '')}:</h2>
             """
             # Insertar imagen preview debajo del título
             if imagenes_cid and mov.pdf_path:
                 preview_path = mov.pdf_path.replace('.pdf', '_preview.png')
                 if preview_path in imagenes_cid:
-                    html += f'<img src="cid:{imagenes_cid[preview_path]}" style="max-width:600px;display:block;margin-bottom:10px;"><br>'
+                    html += f'<div style="text-align: center;"><img src="cid:{imagenes_cid[preview_path]}" style="max-width:600px;display:block;margin:0 auto 10px auto;"></div>'
             
             html += f"""
                     <ul>
@@ -2451,8 +2451,12 @@ def construir_cuerpo_html(movimientos, imagenes_cid=None):
                         <li>Caratulado: {mov.caratulado}</li>"""
 
             if mov.historia_causa_cuaderno:
+                # Aplicar formato en negrita y color a "Escritos por Resolver" si aparece en el texto
+                historia_formateada = mov.historia_causa_cuaderno
+                if "Escritos por Resolver" in historia_formateada:
+                    historia_formateada = historia_formateada.replace("Escritos por Resolver", "<span style='font-weight: bold;padding: 2px 4px;'>Escritos por Resolver</span>")
                 html += f"""
-                        <li>Historia Causa Cuaderno: {mov.historia_causa_cuaderno}</li>"""
+                        <li>Historia Causa Cuaderno: {historia_formateada}</li>"""
 
             html += f"""
                         <li>Fecha Trámite: {mov.fecha}</li>
