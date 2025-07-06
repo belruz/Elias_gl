@@ -118,7 +118,8 @@ class MovimientoPJUD:
                 self.rol == other.rol and
                 self.cuaderno == other.cuaderno and
                 self.tribunal == other.tribunal and
-                self.corte == other.corte
+                self.corte == other.corte and
+                os.path.basename(self.pdf_path or "") == os.path.basename(other.pdf_path or "")
                 )
 
     @property
@@ -1642,7 +1643,7 @@ class ControladorLupaCivil(ControladorLupa):
                     # Cambiar a la pestaña Escritos por Resolver
                     self.page.click('a[href="#escritosCiv"]')
                     random_sleep(1, 2)
-                    self._procesar_escritos_por_resolver(tab_name, caratulado, carpeta_cuaderno)
+                    self._procesar_escritos_por_resolver(tab_name, caratulado, carpeta_cuaderno, texto)
                     
                 except Exception as e:
                     print(f"[ERROR] Error procesando cuaderno {texto}: {str(e)}")
@@ -1654,11 +1655,28 @@ class ControladorLupaCivil(ControladorLupa):
             print(f"[ERROR] Error al verificar movimientos nuevos: {str(e)}")
             return False
 
-    def _procesar_escritos_por_resolver(self, tab_name, caratulado, carpeta_cuaderno):
+    def _procesar_escritos_por_resolver(self, tab_name, caratulado, carpeta_cuaderno, cuaderno_nombre):
         """
         Procesa la tabla de Escritos por Resolver en Civil y agrega nuevos movimientos.
         """
         try:
+            #Extraer ROL y Tribunal del panel de detalles
+            rol_text = None
+            tribunal_text = None
+            try:
+                panel = self.page.query_selector("#modalDetalleMisCauCivil .modal-body .panel.panel-default")
+                if panel:
+                    # Extraer ROL
+                    rol_td = panel.query_selector("td:has-text('ROL:')")
+                    if rol_td:
+                        rol_text = rol_td.inner_text().strip() 
+                    # Extraer Tribunal
+                    tribunal_td = panel.query_selector("td:has-text('Tribunal:')")
+                    if tribunal_td:
+                        tribunal_text = tribunal_td.inner_text().replace("Tribunal:", "").strip()
+            except Exception as e:
+                print(f"[WARN] No se pudo extraer ROL o Tribunal: {str(e)}")
+
             # Asegura que la pestaña esté activa
             self.page.click('a[href="#escritosCiv"]')
             self.page.wait_for_selector('#escritosCiv.active.in', timeout=5000)
@@ -1666,7 +1684,6 @@ class ControladorLupaCivil(ControladorLupa):
             self.page.wait_for_selector('#escritosCiv table.table-bordered tbody', timeout=5000, state="attached")
             escritos = self.page.query_selector_all('#escritosCiv table.table-bordered tbody tr')
             print(f"[INFO] Se encontraron {len(escritos)} escritos por resolver")
-            # Cambia la fecha_objetivo_escrito según tu lógica
             fecha_objetivo_escrito = "27/06/2025"
             for escrito in escritos:
                 try:
@@ -1682,7 +1699,6 @@ class ControladorLupaCivil(ControladorLupa):
                         # Descargar PDF si existe
                         if pdf_form:
                             token = pdf_form.query_selector("input[name='dtaDoc']").get_attribute("value")
-                            # Limpiar fecha y tipo para el nombre del archivo
                             fecha_ingreso_limpia = limpiar_nombre_archivo(fecha_ingreso.replace("/", "-"))
                             tipo_escrito_limpio = limpiar_nombre_archivo(tipo_escrito)
                             pdf_filename_tmp = f"{carpeta_escritos}/{fecha_ingreso_limpia} {tipo_escrito_limpio}_temp.pdf"
@@ -1693,12 +1709,21 @@ class ControladorLupaCivil(ControladorLupa):
                                 if pdf_descargado:
                                     resumen_pdf = extraer_resumen_pdf(pdf_filename_tmp)
                                     resumen_pdf_limpio = limpiar_nombre_archivo(resumen_pdf)
-                                    pdf_filename = f"{carpeta_escritos}/{fecha_ingreso_limpia} {tipo_escrito_limpio} {resumen_pdf_limpio}.pdf"
-                                    # Evitar sobrescribir archivos existentes
+
+                                    # Formato fecha: AAAAMMDD
+                                    fecha_ingreso_pdf = fecha_ingreso[6:10] + fecha_ingreso[3:5] + fecha_ingreso[0:2]
+                                    # Formato rol: "ROL: V-82-2025" -> "V 82 2025"
+                                    rol_pdf = ""
+                                    if rol_text:
+                                        rol_pdf = limpiar_nombre_archivo(
+                                            rol_text.replace("ROL:", "").replace("-", " ").replace("/", " ").strip()
+                                        )
+                                    # Nombre final
+                                    pdf_filename = f"{carpeta_escritos}/{fecha_ingreso_pdf} {rol_pdf} {resumen_pdf_limpio}.pdf"
+
                                     if os.path.exists(pdf_filename):
                                         print(f"[WARN] El archivo final {pdf_filename} ya existe. Se eliminará para evitar conflicto.")
                                         os.remove(pdf_filename)
-                                    # Limitar el nombre del archivo si es demasiado largo
                                     max_filename_len = 156
                                     base, ext = os.path.splitext(pdf_filename)
                                     if len(pdf_filename) > max_filename_len:
@@ -1715,7 +1740,6 @@ class ControladorLupaCivil(ControladorLupa):
                                             except Exception as e:
                                                 print(f"[WARN] No se pudo eliminar el archivo temporal: {pdf_filename_tmp} - {e}")
                                     pdf_path = pdf_filename
-                                    # Generar preview del PDF si no existe
                                     preview_path = pdf_filename.replace('.pdf', '_preview.png')
                                     if not os.path.exists(preview_path):
                                         print(f"[INFO] Generando vista previa del PDF para {pdf_filename}...")
@@ -1727,8 +1751,9 @@ class ControladorLupaCivil(ControladorLupa):
                             caratulado=caratulado,
                             fecha=fecha_ingreso,
                             pdf_path=pdf_path,
-                            cuaderno="Escritos por Resolver",
-                            historia_causa_cuaderno="Escritos por Resolver"
+                            historia_causa_cuaderno = cuaderno_nombre + ", Escritos por Resolver",
+                            rol=rol_text,          
+                            tribunal=tribunal_text 
                         )
                         if agregar_movimiento_sin_duplicar(movimiento_pjud):
                             print(f"[INFO] Escrito por resolver agregado exitosamente al diccionario global")
@@ -2543,12 +2568,12 @@ def enviar_correo(movimientos=None, asunto="Notificación de Sistema de Poder Ju
 #flujo principal del script
 def main():
     # Verificar si es fin de semana
-    today = datetime.datetime.now()
-    is_weekend = today.weekday() >= 5  # 5 = sábado, 6 = domingo
+    #today = datetime.datetime.now()
+    #is_weekend = today.weekday() >= 5  # 5 = sábado, 6 = domingo
 
-    if is_weekend:
-        logging.info("Hoy es fin de semana. No se realizan tareas.")
-        return
+    #if is_weekend:
+     #   logging.info("Hoy es fin de semana. No se realizan tareas.")
+      #  return
 
     # Obtiene las variables de entorno
     USERNAME = os.getenv("RUT")

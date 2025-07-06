@@ -112,7 +112,8 @@ class MovimientoPJUD:
                 self.rol == other.rol and
                 self.cuaderno == other.cuaderno and
                 self.tribunal == other.tribunal and
-                self.corte == other.corte
+                self.corte == other.corte and
+                os.path.basename(self.pdf_path or "") == os.path.basename(other.pdf_path or "")
                 )
 
     @property
