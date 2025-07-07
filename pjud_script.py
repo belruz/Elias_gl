@@ -2572,12 +2572,12 @@ def enviar_correo(movimientos=None, asunto="Notificación de Sistema de Poder Ju
 #flujo principal del script
 def main():
     # Verificar si es fin de semana
-    #today = datetime.datetime.now()
-    #is_weekend = today.weekday() >= 5  # 5 = sábado, 6 = domingo
+    today = datetime.datetime.now()
+    is_weekend = today.weekday() >= 5  # 5 = sábado, 6 = domingo
 
-    #if is_weekend:
-     #   logging.info("Hoy es fin de semana. No se realizan tareas.")
-      #  return
+    if is_weekend:
+        logging.info("Hoy es fin de semana. No se realizan tareas.")
+        return
 
     # Obtiene las variables de entorno
     USERNAME = os.getenv("RUT")

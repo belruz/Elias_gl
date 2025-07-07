@@ -11,11 +11,19 @@ import uuid
 from email.mime.image import MIMEImage
 from PIL import Image 
 
-#script sin breaks, con fecha dinamica y headless True, revisa pagina por pagina
+#Script con breaks, con fecha dinamica, headless True
 
 #Carga del env  
 dotenv_path = Path(__file__).parent / '.env'
 load_dotenv(dotenv_path=dotenv_path, override=True)
+
+# Variables globaless
+BASE_URL_PJUD = os.getenv("BASE_URL_PJUD", "https://oficinajudicialvirtual.pjud.cl/home/")
+EMAIL_SENDER = os.getenv("EMAIL_SENDER_TEST")
+EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD_TEST")
+EMAIL_RECIPIENTS = os.getenv("EMAIL_RECIPIENTS_TEST", "").split(",")
+SMTP_SERVER = "smtp.gmail.com"
+SMTP_PORT = 587
 
 # Configuración del logging de errores
 logging.basicConfig(
@@ -27,17 +35,8 @@ logging.basicConfig(
     ]
 )
 
-# Variables globales para correo
-EMAIL_SENDER = os.getenv("EMAIL_SENDER_TEST")
-EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD_TEST")
-EMAIL_RECIPIENTS = os.getenv("EMAIL_RECIPIENTS_TEST", "").split(",")
-SMTP_SERVER = "smtp.gmail.com"
-SMTP_PORT = 587
-
-# URL base de PJUD
-BASE_URL_PJUD = "https://oficinajudicialvirtual.pjud.cl/home/"
-
 # Listas y diccionarios para la navegación en PJUD
+# los comentados no se han podido desarrollar por falta de causas en esas pestañas
 MIS_CAUSAS_TABS = ["Corte Suprema", "Corte Apelaciones", 
                    "Civil", 
                    #"Laboral", "Penal", 
@@ -51,8 +50,8 @@ TAB_FUNCTIONS = {
     "Corte Apelaciones": "buscApe",
     "Civil": "buscCiv",
     #"Laboral": "buscLab",
-    "Penal": "buscPen",
-    #"Cobranza": "buscCob",
+    #"Penal": "buscPen",
+    "Cobranza": "buscCob",
     #"Familia": "buscFam"
 }
 
@@ -122,7 +121,8 @@ class MovimientoPJUD:
                 self.rol == other.rol and
                 self.cuaderno == other.cuaderno and
                 self.tribunal == other.tribunal and
-                self.corte == other.corte
+                self.corte == other.corte and
+                os.path.basename(self.pdf_path or "") == os.path.basename(other.pdf_path or "")
                 )
 
     @property
@@ -331,11 +331,6 @@ def descargar_pdf_directo(pdf_url, pdf_filename, page):
         print(f"[ERROR] Error general al descargar el PDF: {str(e)}")
         return False
     
-#Elimina caracteres no válidos para nombres de archivo en Windows
-def limpiar_nombre_archivo(nombre):
-    """Elimina caracteres no válidos para nombres de archivo en Windows."""
-    return re.sub(r'[<>:"/\\|?*\n\r\t]', '', nombre)
-
 #Extrae un resumen del PDF (primeras 15 palabras del primer texto encontrado)
 def extraer_resumen_pdf(pdf_path):
     try:
@@ -387,14 +382,18 @@ def generar_preview_pdf(pdf_path, preview_path, width=400):
             print(f"[WARN] No se pudo generar la vista previa para {pdf_path}")
     except Exception as e:
         print(f"[ERROR] Error generando preview: {e}")
-        
-        
+    
+#Elimina caracteres no válidos para nombres de archivo en Windows
+def limpiar_nombre_archivo(nombre):
+    """Elimina caracteres no válidos para nombres de archivo en Windows."""
+    return re.sub(r'[<>:"/\\|?*\n\r\t]', '', nombre)
+
 # Manejo de paginación 
 def manejar_paginacion(page, tab_name):
     """Maneja la paginación en la tabla de causas"""
     try:
         print(f"  Iniciando paginación para {tab_name}...")
-        
+
         # Detectar selector de total de registros según pestaña
         total_selectors = {
             "Corte Apelaciones": '.loadTotalApe b',
@@ -406,53 +405,65 @@ def manejar_paginacion(page, tab_name):
             "Familia": '.loadTotalFam b',
             "Disciplinario": '.loadTotalDis b'
         }
-        
+
         total_selector = total_selectors.get(tab_name, '.loadTotalApe b')
-        
+
         # Obtener el número total de registros
         total_registros = page.evaluate(f'''() => {{
             const el = document.querySelector('{total_selector}');
             return el ? parseInt(el.textContent.replace(/\\D/g, '')) : 0;
         }}''')
-        
+
         if not total_registros or total_registros <= 15:
             print("  Menos de 15 registros, no se requiere paginación")
             yield 1
             return
-            
+
         # Calcular número de páginas (15 registros por página)
         total_paginas = (total_registros + 14) // 15
         print(f"  Total de registros: {total_registros} | Páginas: {total_paginas}")
-        
+
         # Procesar cada página
         for pagina in range(1, total_paginas + 1):
             print(f"  Procesando página {pagina}/{total_paginas}")
-            
+
             # Si no es la primera página, cambiar de página
             if pagina > 1:
-                # Selector robusto para el botón de paginación
                 pagina_selector = f'.pagination .page-link[onclick^="pagina({pagina},"]'
                 print(f"  Buscando selector de paginación: {pagina_selector}")
                 try:
-                    page.wait_for_selector(pagina_selector, timeout=3000)
-                    page.click(pagina_selector)
-                    print(f"  Click en paginador: {pagina_selector}")
-                    # Esperar a que la tabla cambie
-                    random_sleep(1, 2)
-                    page.wait_for_load_state("networkidle")
+                    paginadores = page.query_selector_all(pagina_selector)
+                    clicked = False
+                    for pag in paginadores:
+                        try:
+                            classes = pag.get_attribute("class") or ""
+                            # Verifica visibilidad real y que no sea el actual ni deshabilitado
+                            style = pag.evaluate("el => window.getComputedStyle(el).display")
+                            if pag.is_visible() and style != "none" and "disabled" not in classes and "active" not in classes:
+                                pag.click()
+                                clicked = True
+                                print(f"  Click en paginador: {pagina_selector}")
+                                random_sleep(1, 2)
+                                page.wait_for_load_state("networkidle")
+                                break
+                        except Exception:
+                            continue
+                    if not clicked:
+                        print(f"  No se encontró un paginador visible y habilitado para la página {pagina}")
+                        continue
                 except Exception as e:
                     print(f"  No se pudo hacer click en paginador: {e}")
                     continue
-            
+            random_sleep(0.5, 1.5)  # Pequeña pausa para asegurar carga
             yield pagina
-            
+
         print("  Paginación completada")
-        
+
     except Exception as e:
         print(f"  Error en paginación: {str(e)}")
         yield 1
-        
-#Lupa se refiere a el icon de lupa para abrir cada causa 
+
+#Lupa se refiere al icon de lupa para abrir cada causa 
 #esta es la clase base o general para los controladores de lupas
 class ControladorLupa:
     def __init__(self, page):
@@ -628,7 +639,7 @@ class ControladorLupa:
                     fecha_tramite_str = movimiento.query_selector("td:nth-child(5)").inner_text().strip()
                     fecha_tramite_pdf = fecha_tramite_str[6:10] + fecha_tramite_str[3:5] + fecha_tramite_str[0:2]
                     
-                    if fecha_tramite_str == obtener_fecha_actual_str():
+                    if fecha_tramite_str == obtener_fecha_actual_str():                        
                         movimientos_nuevos = True
                         carpeta_general = tab_name.replace(' ', '_')
                         carpeta_caratulado = f"{carpeta_general}/{caratulado}"
@@ -665,7 +676,17 @@ class ControladorLupa:
                                         # Nombre final
                                         pdf_filename = f"{carpeta_caratulado}/{fecha_tramite_pdf} {libro_pdf} {resumen_pdf_limpio}.pdf"
                                         # Renombrar el archivo temporal al nombre final
-                                        os.rename(pdf_filename_tmp, pdf_filename)
+                                        try:
+                                            os.rename(pdf_filename_tmp, pdf_filename)
+                                        except Exception as e:
+                                            print(f"[WARN] No se pudo renombrar el archivo temporal: {pdf_filename_tmp} -> {pdf_filename} - {e}")
+                                        finally:
+                                            if os.path.exists(pdf_filename_tmp):
+                                                try:
+                                                    os.remove(pdf_filename_tmp)
+                                                    print(f"[INFO] Archivo temporal eliminado: {pdf_filename_tmp}")
+                                                except Exception as e:
+                                                    print(f"[WARN] No se pudo eliminar el archivo temporal: {pdf_filename_tmp} - {e}")                                        
                                         pdf_path = pdf_filename
                                         preview_path = pdf_filename.replace('.pdf', '_preview.png')
 
@@ -918,39 +939,38 @@ class ControladorLupaSuprema(ControladorLupa):
     def manejar(self, tab_name):
         try:
             print(f"  Procesando lupa tipo '{self.__class__.__name__}' en pestaña '{tab_name}'...")
-            for pagina in manejar_paginacion(self.page, tab_name):
-                lupas = self._obtener_lupas()
-                if not lupas:
-                    print("  No se encontraron lupas en la pestaña.")
-                    return False
-                
-                for idx, lupa_link in enumerate(lupas):
-                    try:
-                        fila = lupa_link.evaluate_handle('el => el.closest("tr")')
-                        tds = fila.query_selector_all('td')
-                        if len(tds) < 3:
-                            continue
-                        caratulado = tds[2].inner_text().strip()
-                        corte_text = tds[5].inner_text().strip() 
-                        print(f"  Procesando lupa {idx+1} de {len(lupas)} (caratulado: {caratulado})")
-                        
-                        lupa_link.scroll_into_view_if_needed()
-                        random_sleep(0.5, 1)
-                        lupa_link.click()
-                        random_sleep(1, 2)
-                        self._verificar_modal()
-                        self._verificar_tabla()
-                        movimientos_nuevos = self._procesar_contenido_suprema(tab_name, caratulado, corte_text)
-                        self._cerrar_modal()
-                        
-                        #break para procesar solo la primera lupa
-                        #break
-                        
-                    except Exception as e:
-                        print(f"  Error procesando la lupa {idx+1}: {str(e)}")
-                        self._manejar_error(e)
-                        self._cerrar_modal()
+            lupas = self._obtener_lupas()
+            if not lupas:
+                print("  No se encontraron lupas en la pestaña.")
+                return False
+            
+            for idx, lupa_link in enumerate(lupas):
+                try:
+                    fila = lupa_link.evaluate_handle('el => el.closest("tr")')
+                    tds = fila.query_selector_all('td')
+                    if len(tds) < 3:
                         continue
+                    caratulado = tds[2].inner_text().strip()
+                    corte_text = tds[5].inner_text().strip() 
+                    print(f"  Procesando lupa {idx+1} de {len(lupas)} (caratulado: {caratulado})")
+                    
+                    lupa_link.scroll_into_view_if_needed()
+                    random_sleep(0.5, 1)
+                    lupa_link.click()
+                    random_sleep(1, 2)
+                    self._verificar_modal()
+                    self._verificar_tabla()
+                    movimientos_nuevos = self._procesar_contenido_suprema(tab_name, caratulado, corte_text)
+                    self._cerrar_modal()
+                    
+                    #break para procesar solo la primera lupa
+                    #break
+                    
+                except Exception as e:
+                    print(f"  Error procesando la lupa {idx+1}: {str(e)}")
+                    self._manejar_error(e)
+                    self._cerrar_modal()
+                    continue
             return True
         except Exception as e:
             self._manejar_error(e)
@@ -1046,7 +1066,17 @@ class ControladorLupaSuprema(ControladorLupa):
                                         resumen_pdf = extraer_resumen_pdf(pdf_filename_tmp)
                                         resumen_pdf_limpio = limpiar_nombre_archivo(resumen_pdf)
                                         pdf_filename = f"{carpeta_caratulado}/{fecha_tramite_pdf} {libro_pdf} {resumen_pdf_limpio}.pdf"
-                                        os.rename(pdf_filename_tmp, pdf_filename)
+                                        try:
+                                            os.rename(pdf_filename_tmp, pdf_filename)
+                                        except Exception as e:
+                                            print(f"[WARN] No se pudo renombrar el archivo temporal: {pdf_filename_tmp} -> {pdf_filename} - {e}")
+                                        finally:
+                                            if os.path.exists(pdf_filename_tmp):
+                                                try:
+                                                    os.remove(pdf_filename_tmp)
+                                                    print(f"[INFO] Archivo temporal eliminado: {pdf_filename_tmp}")
+                                                except Exception as e:
+                                                    print(f"[WARN] No se pudo eliminar el archivo temporal: {pdf_filename_tmp} - {e}")
                                         pdf_path = pdf_filename
                                         preview_path = pdf_filename.replace('.pdf', '_preview.png')
                                         # Generar preview si no existe
@@ -1103,42 +1133,41 @@ class ControladorLupaApelacionesPrincipal(ControladorLupa):
     def manejar(self, tab_name):
         try:
             print(f"  Procesando lupa tipo '{self.__class__.__name__}' en pestaña '{tab_name}'...")
-            for pagina in manejar_paginacion(self.page, tab_name):
-                lupas = self._obtener_lupas()
-                if not lupas:
-                    print("  No se encontraron lupas en la pestaña.")
-                    return False
-                
-                for idx, lupa_link in enumerate(lupas):
-                    try:
-                        fila = lupa_link.evaluate_handle('el => el.closest("tr")')
-                        tds = fila.query_selector_all('td')
-                        if len(tds) < 4:
-                            continue
-                        # Usar la columna 4 (índice 3) para el caratulado
-                        caratulado = tds[3].inner_text().strip()
-                        #extraer corte
-                        corte_text = tds[2].inner_text().replace("Corte:", "").strip()
-                        print(f" Corte: {corte_text} ")
-                        print(f"  Procesando lupa {idx+1} de {len(lupas)} (caratulado: {caratulado})")
-                        
-                        lupa_link.scroll_into_view_if_needed()
-                        random_sleep(0.5, 1)
-                        lupa_link.click()
-                        random_sleep(1, 2)
-                        self._verificar_modal()
-                        self._verificar_tabla()
-                        movimientos_nuevos = self._procesar_contenido(tab_name, caratulado,corte_text)
-                        self._cerrar_modal()
-                        
-                        #break para procesar solo la primera lupa
-                        #break
-                        
-                    except Exception as e:
-                        print(f"  Error procesando la lupa {idx+1}: {str(e)}")
-                        self._manejar_error(e)
-                        self._cerrar_modal()
+            lupas = self._obtener_lupas()
+            if not lupas:
+                print("  No se encontraron lupas en la pestaña.")
+                return False
+            
+            for idx, lupa_link in enumerate(lupas):
+                try:
+                    fila = lupa_link.evaluate_handle('el => el.closest("tr")')
+                    tds = fila.query_selector_all('td')
+                    if len(tds) < 4:
                         continue
+                    # Usar la columna 4 (índice 3) para el caratulado
+                    caratulado = tds[3].inner_text().strip()
+                    #extraer corte
+                    corte_text = tds[2].inner_text().replace("Corte:", "").strip()
+                    print(f" Corte: {corte_text} ")
+                    print(f"  Procesando lupa {idx+1} de {len(lupas)} (caratulado: {caratulado})")
+                    
+                    lupa_link.scroll_into_view_if_needed()
+                    random_sleep(0.5, 1)
+                    lupa_link.click()
+                    random_sleep(1, 2)
+                    self._verificar_modal()
+                    self._verificar_tabla()
+                    movimientos_nuevos = self._procesar_contenido(tab_name, caratulado,corte_text)
+                    self._cerrar_modal()
+                    
+                    #break para procesar solo la primera lupa
+                    #break
+                    
+                except Exception as e:
+                    print(f"  Error procesando la lupa {idx+1}: {str(e)}")
+                    self._manejar_error(e)
+                    self._cerrar_modal()
+                    continue
             return True
         except Exception as e:
             self._manejar_error(e)
@@ -1275,7 +1304,17 @@ class ControladorLupaApelacionesPrincipal(ControladorLupa):
                                     resumen_pdf = extraer_resumen_pdf(pdf_filename_tmp)
                                     resumen_pdf_limpio = limpiar_nombre_archivo(resumen_pdf)
                                     pdf_filename = f"{carpeta_caratulado}/{fecha_tramite_pdf} {libro_pdf} {resumen_pdf_limpio}.pdf"
-                                    os.rename(pdf_filename_tmp, pdf_filename)
+                                    try:
+                                        os.rename(pdf_filename_tmp, pdf_filename)
+                                    except Exception as e:
+                                        print(f"[WARN] No se pudo renombrar el archivo temporal: {pdf_filename_tmp} -> {pdf_filename} - {e}")
+                                    finally:
+                                        if os.path.exists(pdf_filename_tmp):
+                                            try:
+                                                os.remove(pdf_filename_tmp)
+                                                print(f"[INFO] Archivo temporal eliminado: {pdf_filename_tmp}")
+                                            except Exception as e:
+                                                print(f"[WARN] No se pudo eliminar el archivo temporal: {pdf_filename_tmp} - {e}")
                                     pdf_path = pdf_filename
                                     preview_path = pdf_filename.replace('.pdf', '_preview.png')
                                     # Generar vista previa si no existe
@@ -1428,6 +1467,12 @@ class ControladorLupaCivil(ControladorLupa):
                     # Fecha específica según el cuaderno
                     fecha_objetivo = obtener_fecha_actual_str()
                     
+                    #crear carpeta para el caratulado
+                    carpeta_caratulado = f"{carpeta_general}/{caratulado}"                                
+                    # Crear carpeta para el cuaderno con nombre limpio
+                    nombre_carpeta = f"Cuaderno_{texto_limpio}"
+                    carpeta_cuaderno = f"{carpeta_caratulado}/{nombre_carpeta}"
+                    
                     for movimiento in movimientos:
                         try:
                             folio = movimiento.query_selector("td:nth-child(1)").inner_text().strip()
@@ -1437,11 +1482,6 @@ class ControladorLupaCivil(ControladorLupa):
                                 fecha_tramite_str = fecha_tramite_str.split('(')[0].strip()
                             if fecha_tramite_str == fecha_objetivo:
                                 movimientos_nuevos = True
-                                #crear carpeta para el caratulado
-                                carpeta_caratulado = f"{carpeta_general}/{caratulado}"                                
-                                # Crear carpeta para el cuaderno con nombre limpio
-                                nombre_carpeta = f"Cuaderno_{texto_limpio}"
-                                carpeta_cuaderno = f"{carpeta_caratulado}/{nombre_carpeta}"
                                 if not os.path.exists(carpeta_cuaderno):
                                     os.makedirs(carpeta_cuaderno)
                                 # Capturar panel de detalles
@@ -1560,7 +1600,17 @@ class ControladorLupaCivil(ControladorLupa):
                                             if len(pdf_filename) > max_filename_len:
                                                 pdf_filename = base[:max_filename_len - len(ext)] + ext
                                             #renombrar el archivo temporal al nombre final
-                                            os.rename(pdf_filename_tmp, pdf_filename)
+                                            try:
+                                                os.rename(pdf_filename_tmp, pdf_filename)
+                                            except Exception as e:
+                                                print(f"[WARN] No se pudo renombrar el archivo temporal: {pdf_filename_tmp} -> {pdf_filename} - {e}")
+                                            finally:
+                                                if os.path.exists(pdf_filename_tmp):
+                                                    try:
+                                                        os.remove(pdf_filename_tmp)
+                                                        print(f"[INFO] Archivo temporal eliminado: {pdf_filename_tmp}")
+                                                    except Exception as e:
+                                                        print(f"[WARN] No se pudo eliminar el archivo temporal: {pdf_filename_tmp} - {e}")
                                             pdf_path = pdf_filename
                                             preview_path = pdf_filename.replace('.pdf', '_preview.png')
                                             if not os.path.exists(preview_path):
@@ -1595,6 +1645,7 @@ class ControladorLupaCivil(ControladorLupa):
                     # Cambiar a la pestaña Escritos por Resolver
                     self.page.click('a[href="#escritosCiv"]')
                     random_sleep(1, 2)
+                    self._procesar_escritos_por_resolver(tab_name, caratulado, carpeta_cuaderno, texto)
                     
                 except Exception as e:
                     print(f"[ERROR] Error procesando cuaderno {texto}: {str(e)}")
@@ -1606,7 +1657,116 @@ class ControladorLupaCivil(ControladorLupa):
             print(f"[ERROR] Error al verificar movimientos nuevos: {str(e)}")
             return False
 
+    def _procesar_escritos_por_resolver(self, tab_name, caratulado, carpeta_cuaderno, cuaderno_nombre):
+        """
+        Procesa la tabla de Escritos por Resolver en Civil y agrega nuevos movimientos.
+        """
+        try:
+            #Extraer ROL y Tribunal del panel de detalles
+            rol_text = None
+            tribunal_text = None
+            try:
+                panel = self.page.query_selector("#modalDetalleMisCauCivil .modal-body .panel.panel-default")
+                if panel:
+                    # Extraer ROL
+                    rol_td = panel.query_selector("td:has-text('ROL:')")
+                    if rol_td:
+                        rol_text = rol_td.inner_text().strip() 
+                    # Extraer Tribunal
+                    tribunal_td = panel.query_selector("td:has-text('Tribunal:')")
+                    if tribunal_td:
+                        tribunal_text = tribunal_td.inner_text().replace("Tribunal:", "").strip()
+            except Exception as e:
+                print(f"[WARN] No se pudo extraer ROL o Tribunal: {str(e)}")
 
+            # Asegura que la pestaña esté activa
+            self.page.click('a[href="#escritosCiv"]')
+            self.page.wait_for_selector('#escritosCiv.active.in', timeout=5000)
+            # Espera a que la tabla esté presente (aunque esté vacía)
+            self.page.wait_for_selector('#escritosCiv table.table-bordered tbody', timeout=5000, state="attached")
+            escritos = self.page.query_selector_all('#escritosCiv table.table-bordered tbody tr')
+            print(f"[INFO] Se encontraron {len(escritos)} escritos por resolver")
+            fecha_objetivo_escrito = obtener_fecha_actual_str()
+            for escrito in escritos:
+                try:
+                    fecha_ingreso = escrito.query_selector("td:nth-child(3)").inner_text().strip()
+                    tipo_escrito = escrito.query_selector("td:nth-child(4)").inner_text().strip()
+                    solicitante = escrito.query_selector("td:nth-child(5)").inner_text().strip()
+                    pdf_form = escrito.query_selector("form[name='formAneEsc']")
+                    pdf_path = None
+                    if fecha_ingreso == fecha_objetivo_escrito:
+                        carpeta_escritos = f"{carpeta_cuaderno}/EscritosPorResolver"
+                        if not os.path.exists(carpeta_escritos):
+                            os.makedirs(carpeta_escritos, exist_ok=True)
+                        # Descargar PDF si existe
+                        if pdf_form:
+                            token = pdf_form.query_selector("input[name='dtaDoc']").get_attribute("value")
+                            fecha_ingreso_limpia = limpiar_nombre_archivo(fecha_ingreso.replace("/", "-"))
+                            tipo_escrito_limpio = limpiar_nombre_archivo(tipo_escrito)
+                            pdf_filename_tmp = f"{carpeta_escritos}/{fecha_ingreso_limpia} {tipo_escrito_limpio}_temp.pdf"
+                            if token:
+                                base_url = "https://oficinajudicialvirtual.pjud.cl/misCausas/civil/documentos/docuN.php?dtaDoc="
+                                original_url = base_url + token
+                                pdf_descargado = descargar_pdf_directo(original_url, pdf_filename_tmp, self.page)
+                                if pdf_descargado:
+                                    resumen_pdf = extraer_resumen_pdf(pdf_filename_tmp)
+                                    resumen_pdf_limpio = limpiar_nombre_archivo(resumen_pdf)
+
+                                    # Formato fecha: AAAAMMDD
+                                    fecha_ingreso_pdf = fecha_ingreso[6:10] + fecha_ingreso[3:5] + fecha_ingreso[0:2]
+                                    # Formato rol: "ROL: V-82-2025" -> "V 82 2025"
+                                    rol_pdf = ""
+                                    if rol_text:
+                                        rol_pdf = limpiar_nombre_archivo(
+                                            rol_text.replace("ROL:", "").replace("-", " ").replace("/", " ").strip()
+                                        )
+                                    # Nombre final
+                                    pdf_filename = f"{carpeta_escritos}/{fecha_ingreso_pdf} {rol_pdf} {resumen_pdf_limpio}.pdf"
+
+                                    if os.path.exists(pdf_filename):
+                                        print(f"[WARN] El archivo final {pdf_filename} ya existe. Se eliminará para evitar conflicto.")
+                                        os.remove(pdf_filename)
+                                    max_filename_len = 156
+                                    base, ext = os.path.splitext(pdf_filename)
+                                    if len(pdf_filename) > max_filename_len:
+                                        pdf_filename = base[:max_filename_len - len(ext)] + ext
+                                    try:
+                                        os.rename(pdf_filename_tmp, pdf_filename)
+                                    except Exception as e:
+                                        print(f"[WARN] No se pudo renombrar el archivo temporal: {pdf_filename_tmp} -> {pdf_filename} - {e}")
+                                    finally:
+                                        if os.path.exists(pdf_filename_tmp):
+                                            try:
+                                                os.remove(pdf_filename_tmp)
+                                                print(f"[INFO] Archivo temporal eliminado: {pdf_filename_tmp}")
+                                            except Exception as e:
+                                                print(f"[WARN] No se pudo eliminar el archivo temporal: {pdf_filename_tmp} - {e}")
+                                    pdf_path = pdf_filename
+                                    preview_path = pdf_filename.replace('.pdf', '_preview.png')
+                                    if not os.path.exists(preview_path):
+                                        print(f"[INFO] Generando vista previa del PDF para {pdf_filename}...")
+                                        generar_preview_pdf(pdf_filename, preview_path)
+                        # Agregar movimiento a la lista global
+                        movimiento_pjud = MovimientoPJUD(
+                            folio=None,
+                            seccion=tab_name,
+                            caratulado=caratulado,
+                            fecha=fecha_ingreso,
+                            pdf_path=pdf_path,
+                            historia_causa_cuaderno = cuaderno_nombre + ", Escritos por Resolver",
+                            rol=rol_text,          
+                            tribunal=tribunal_text 
+                        )
+                        if agregar_movimiento_sin_duplicar(movimiento_pjud):
+                            print(f"[INFO] Escrito por resolver agregado exitosamente al diccionario global")
+                        else:
+                            print(f"[INFO] El escrito ya existía en el diccionario global")
+                except Exception as e:
+                    print(f"[ERROR] Error procesando escrito por resolver: {str(e)}")
+                    continue
+        except Exception as e:
+            print(f"[WARN] No se pudo procesar la tabla de Escritos por Resolver: {str(e)}") 
+    
     def _obtener_opciones_cuaderno(self):
         """Obtiene todas las opciones del dropdown de cuadernos"""
         try:
@@ -1864,7 +2024,17 @@ class ControladorLupaCobranza(ControladorLupa):
                                             if len(pdf_filename) > max_filename_len:
                                                 pdf_filename = base[:max_filename_len - len(ext)] + ext
                                             #renombrar el archivo temporal al nombre final
-                                            os.rename(pdf_filename_tmp, pdf_filename)
+                                            try:
+                                                os.rename(pdf_filename_tmp, pdf_filename)
+                                            except Exception as e:
+                                                print(f"[WARN] No se pudo renombrar el archivo temporal: {pdf_filename_tmp} -> {pdf_filename} - {e}")
+                                            finally:
+                                                if os.path.exists(pdf_filename_tmp):
+                                                    try:
+                                                        os.remove(pdf_filename_tmp)
+                                                        print(f"[INFO] Archivo temporal eliminado: {pdf_filename_tmp}")
+                                                    except Exception as e:
+                                                        print(f"[WARN] No se pudo eliminar el archivo temporal: {pdf_filename_tmp} - {e}")
                                             pdf_path = pdf_filename
                                             preview_path = pdf_filename.replace('.pdf', '_preview.png')
 
@@ -1948,7 +2118,6 @@ class ControladorLupaCobranza(ControladorLupa):
 def obtener_controlador_lupa(tipo, page):
     controladores = {
         'suprema': ControladorLupaSuprema,
-        'apelaciones': ControladorLupaApelacionesPrincipal,
         'apelaciones_principal': ControladorLupaApelacionesPrincipal,
         'civil': ControladorLupaCivil,
         'cobranza': ControladorLupaCobranza
@@ -2260,13 +2429,13 @@ def construir_cuerpo_html(movimientos, imagenes_cid=None):
                 identificador_limpio = f"{i}"
             html += f"""
                 <div class="movimiento">
-                    <h2>{identificador_limpio}, {mov.caratulado}{', ' + mov.corte if mov.corte else (', ' + mov.tribunal if mov.tribunal else '')}:</h2>
+                    <h2 style="text-align: center;">{identificador_limpio}, {mov.caratulado}{', ' + mov.corte if mov.corte else (', ' + mov.tribunal if mov.tribunal else '')}:</h2>
             """
             # Insertar imagen preview debajo del título
             if imagenes_cid and mov.pdf_path:
                 preview_path = mov.pdf_path.replace('.pdf', '_preview.png')
                 if preview_path in imagenes_cid:
-                    html += f'<img src="cid:{imagenes_cid[preview_path]}" style="max-width:600px;display:block;margin-bottom:10px;"><br>'
+                    html += f'<div style="text-align: center;"><img src="cid:{imagenes_cid[preview_path]}" style="max-width:600px;display:block;margin:0 auto 10px auto;"></div>'
             
             html += f"""
                     <ul>
@@ -2283,8 +2452,12 @@ def construir_cuerpo_html(movimientos, imagenes_cid=None):
                         <li>Caratulado: {mov.caratulado}</li>"""
 
             if mov.historia_causa_cuaderno:
+                # Aplicar formato en negrita y color a "Escritos por Resolver" si aparece en el texto
+                historia_formateada = mov.historia_causa_cuaderno
+                if "Escritos por Resolver" in historia_formateada:
+                    historia_formateada = historia_formateada.replace("Escritos por Resolver", "<span style='font-weight: bold;padding: 2px 4px;'>Escritos por Resolver</span>")
                 html += f"""
-                        <li>Historia Causa Cuaderno: {mov.historia_causa_cuaderno}</li>"""
+                        <li>Historia Causa Cuaderno: {historia_formateada}</li>"""
 
             html += f"""
                         <li>Fecha Trámite: {mov.fecha}</li>
