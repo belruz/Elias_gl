@@ -11,7 +11,9 @@ import uuid
 from email.mime.image import MIMEImage
 from PIL import Image 
 
+#-----------------------------------------------------
 #Script con breaks, sin fecha dinamica, headless False
+#-----------------------------------------------------
 
 #Carga del env  
 dotenv_path = Path(__file__).parent / '.env'
@@ -27,7 +29,7 @@ logging.basicConfig(
     ]
 )
 
-# Variables globales para correo
+# Variables globales
 EMAIL_SENDER = os.getenv("EMAIL_SENDER_TEST")
 EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD_TEST")
 EMAIL_RECIPIENTS = os.getenv("EMAIL_RECIPIENTS_TEST", "").split(",")
@@ -35,7 +37,10 @@ SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 587
 
 # URL base de PJUD
-BASE_URL_PJUD = "https://oficinajudicialvirtual.pjud.cl/home/"
+BASE_URL_PJUD = os.getenv("BASE_URL_PJUD", "https://oficinajudicialvirtual.pjud.cl/")
+
+# Lista global para almacenar todos los movimientos nuevos
+MOVIMIENTOS_GLOBALES = []
 
 # Listas y diccionarios para la navegación en PJUD
 MIS_CAUSAS_TABS = ["Corte Suprema", "Corte Apelaciones", 
@@ -126,9 +131,6 @@ class MovimientoPJUD:
     def identificador_causa(self):
         # Devuelve el primer identificador disponible
         return self.rol or self.rit or self.libro
-
-# Lista global para almacenar todos los movimientos nuevos
-MOVIMIENTOS_GLOBALES = []
 
 # Función para agregar un movimiento sin duplicar
 def agregar_movimiento_sin_duplicar(movimiento):

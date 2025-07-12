@@ -11,19 +11,13 @@ import uuid
 from email.mime.image import MIMEImage
 from PIL import Image 
 
+#----------------------------------------------------
 #Script sin breaks, con fecha dinamica, headless True
+#----------------------------------------------------
 
 #Carga del env  
 dotenv_path = Path(__file__).parent / '.env'
 load_dotenv(dotenv_path=dotenv_path, override=True)
-
-# Variables globaless
-BASE_URL_PJUD = os.getenv("BASE_URL_PJUD", "https://oficinajudicialvirtual.pjud.cl/home/")
-EMAIL_SENDER = os.getenv("EMAIL_SENDER_TEST")
-EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD_TEST")
-EMAIL_RECIPIENTS = os.getenv("EMAIL_RECIPIENTS_TEST", "").split(",")
-SMTP_SERVER = "smtp.gmail.com"
-SMTP_PORT = 587
 
 # Configuración del logging de errores
 logging.basicConfig(
@@ -35,8 +29,20 @@ logging.basicConfig(
     ]
 )
 
+# Variables globales
+EMAIL_SENDER = os.getenv("EMAIL_SENDER_TEST")
+EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD_TEST")
+EMAIL_RECIPIENTS = os.getenv("EMAIL_RECIPIENTS_TEST", "").split(",")
+SMTP_SERVER = "smtp.gmail.com"
+SMTP_PORT = 587
+
+# URL base de PJUD
+BASE_URL_PJUD = os.getenv("BASE_URL_PJUD", "https://oficinajudicialvirtual.pjud.cl/")
+
+# Lista global para almacenar todos los movimientos nuevos
+MOVIMIENTOS_GLOBALES = []
+
 # Listas y diccionarios para la navegación en PJUD
-# los comentados no se han podido desarrollar por falta de causas en esas pestañas
 MIS_CAUSAS_TABS = ["Corte Suprema", "Corte Apelaciones", 
                    "Civil", 
                    #"Laboral", "Penal", 
@@ -50,8 +56,8 @@ TAB_FUNCTIONS = {
     "Corte Apelaciones": "buscApe",
     "Civil": "buscCiv",
     #"Laboral": "buscLab",
-    #"Penal": "buscPen",
-    "Cobranza": "buscCob",
+    "Penal": "buscPen",
+    #"Cobranza": "buscCob",
     #"Familia": "buscFam"
 }
 
@@ -129,9 +135,6 @@ class MovimientoPJUD:
     def identificador_causa(self):
         # Devuelve el primer identificador disponible
         return self.rol or self.rit or self.libro
-
-# Lista global para almacenar todos los movimientos nuevos
-MOVIMIENTOS_GLOBALES = []
 
 # Función para agregar un movimiento sin duplicar
 def agregar_movimiento_sin_duplicar(movimiento):
@@ -331,6 +334,11 @@ def descargar_pdf_directo(pdf_url, pdf_filename, page):
         print(f"[ERROR] Error general al descargar el PDF: {str(e)}")
         return False
     
+#Elimina caracteres no válidos para nombres de archivo en Windows
+def limpiar_nombre_archivo(nombre):
+    """Elimina caracteres no válidos para nombres de archivo en Windows."""
+    return re.sub(r'[<>:"/\\|?*\n\r\t]', '', nombre)
+
 #Extrae un resumen del PDF (primeras 15 palabras del primer texto encontrado)
 def extraer_resumen_pdf(pdf_path):
     try:
@@ -382,12 +390,8 @@ def generar_preview_pdf(pdf_path, preview_path, width=400):
             print(f"[WARN] No se pudo generar la vista previa para {pdf_path}")
     except Exception as e:
         print(f"[ERROR] Error generando preview: {e}")
-    
-#Elimina caracteres no válidos para nombres de archivo en Windows
-def limpiar_nombre_archivo(nombre):
-    """Elimina caracteres no válidos para nombres de archivo en Windows."""
-    return re.sub(r'[<>:"/\\|?*\n\r\t]', '', nombre)
-
+        
+        
 # Manejo de paginación 
 def manejar_paginacion(page, tab_name):
     """Maneja la paginación en la tabla de causas"""
@@ -463,7 +467,7 @@ def manejar_paginacion(page, tab_name):
         print(f"  Error en paginación: {str(e)}")
         yield 1
 
-#Lupa se refiere al icon de lupa para abrir cada causa 
+#Lupa se refiere a el icon de lupa para abrir cada causa 
 #esta es la clase base o general para los controladores de lupas
 class ControladorLupa:
     def __init__(self, page):
@@ -639,7 +643,7 @@ class ControladorLupa:
                     fecha_tramite_str = movimiento.query_selector("td:nth-child(5)").inner_text().strip()
                     fecha_tramite_pdf = fecha_tramite_str[6:10] + fecha_tramite_str[3:5] + fecha_tramite_str[0:2]
                     
-                    if fecha_tramite_str == obtener_fecha_actual_str():                        
+                    if fecha_tramite_str == obtener_fecha_actual_str():
                         movimientos_nuevos = True
                         carpeta_general = tab_name.replace(' ', '_')
                         carpeta_caratulado = f"{carpeta_general}/{caratulado}"
@@ -939,38 +943,39 @@ class ControladorLupaSuprema(ControladorLupa):
     def manejar(self, tab_name):
         try:
             print(f"  Procesando lupa tipo '{self.__class__.__name__}' en pestaña '{tab_name}'...")
-            lupas = self._obtener_lupas()
-            if not lupas:
-                print("  No se encontraron lupas en la pestaña.")
-                return False
-            
-            for idx, lupa_link in enumerate(lupas):
-                try:
-                    fila = lupa_link.evaluate_handle('el => el.closest("tr")')
-                    tds = fila.query_selector_all('td')
-                    if len(tds) < 3:
+            for pagina in manejar_paginacion(self.page, tab_name):
+                lupas = self._obtener_lupas()
+                if not lupas:
+                    print("  No se encontraron lupas en la pestaña.")
+                    return False
+                
+                for idx, lupa_link in enumerate(lupas):
+                    try:
+                        fila = lupa_link.evaluate_handle('el => el.closest("tr")')
+                        tds = fila.query_selector_all('td')
+                        if len(tds) < 3:
+                            continue
+                        caratulado = tds[2].inner_text().strip()
+                        corte_text = tds[5].inner_text().strip() 
+                        print(f"  Procesando lupa {idx+1} de {len(lupas)} (caratulado: {caratulado})")
+                        
+                        lupa_link.scroll_into_view_if_needed()
+                        random_sleep(0.5, 1)
+                        lupa_link.click()
+                        random_sleep(1, 2)
+                        self._verificar_modal()
+                        self._verificar_tabla()
+                        movimientos_nuevos = self._procesar_contenido_suprema(tab_name, caratulado, corte_text)
+                        self._cerrar_modal()
+                        
+                        #break para procesar solo la primera lupa
+                        #break
+                        
+                    except Exception as e:
+                        print(f"  Error procesando la lupa {idx+1}: {str(e)}")
+                        self._manejar_error(e)
+                        self._cerrar_modal()
                         continue
-                    caratulado = tds[2].inner_text().strip()
-                    corte_text = tds[5].inner_text().strip() 
-                    print(f"  Procesando lupa {idx+1} de {len(lupas)} (caratulado: {caratulado})")
-                    
-                    lupa_link.scroll_into_view_if_needed()
-                    random_sleep(0.5, 1)
-                    lupa_link.click()
-                    random_sleep(1, 2)
-                    self._verificar_modal()
-                    self._verificar_tabla()
-                    movimientos_nuevos = self._procesar_contenido_suprema(tab_name, caratulado, corte_text)
-                    self._cerrar_modal()
-                    
-                    #break para procesar solo la primera lupa
-                    #break
-                    
-                except Exception as e:
-                    print(f"  Error procesando la lupa {idx+1}: {str(e)}")
-                    self._manejar_error(e)
-                    self._cerrar_modal()
-                    continue
             return True
         except Exception as e:
             self._manejar_error(e)
@@ -1133,41 +1138,42 @@ class ControladorLupaApelacionesPrincipal(ControladorLupa):
     def manejar(self, tab_name):
         try:
             print(f"  Procesando lupa tipo '{self.__class__.__name__}' en pestaña '{tab_name}'...")
-            lupas = self._obtener_lupas()
-            if not lupas:
-                print("  No se encontraron lupas en la pestaña.")
-                return False
-            
-            for idx, lupa_link in enumerate(lupas):
-                try:
-                    fila = lupa_link.evaluate_handle('el => el.closest("tr")')
-                    tds = fila.query_selector_all('td')
-                    if len(tds) < 4:
+            for pagina in manejar_paginacion(self.page, tab_name):
+                lupas = self._obtener_lupas()
+                if not lupas:
+                    print("  No se encontraron lupas en la pestaña.")
+                    return False
+                
+                for idx, lupa_link in enumerate(lupas):
+                    try:
+                        fila = lupa_link.evaluate_handle('el => el.closest("tr")')
+                        tds = fila.query_selector_all('td')
+                        if len(tds) < 4:
+                            continue
+                        # Usar la columna 4 (índice 3) para el caratulado
+                        caratulado = tds[3].inner_text().strip()
+                        #extraer corte
+                        corte_text = tds[2].inner_text().replace("Corte:", "").strip()
+                        print(f" Corte: {corte_text} ")
+                        print(f"  Procesando lupa {idx+1} de {len(lupas)} (caratulado: {caratulado})")
+                        
+                        lupa_link.scroll_into_view_if_needed()
+                        random_sleep(0.5, 1)
+                        lupa_link.click()
+                        random_sleep(1, 2)
+                        self._verificar_modal()
+                        self._verificar_tabla()
+                        movimientos_nuevos = self._procesar_contenido(tab_name, caratulado,corte_text)
+                        self._cerrar_modal()
+                        
+                        #break para procesar solo la primera lupa
+                        #break
+                        
+                    except Exception as e:
+                        print(f"  Error procesando la lupa {idx+1}: {str(e)}")
+                        self._manejar_error(e)
+                        self._cerrar_modal()
                         continue
-                    # Usar la columna 4 (índice 3) para el caratulado
-                    caratulado = tds[3].inner_text().strip()
-                    #extraer corte
-                    corte_text = tds[2].inner_text().replace("Corte:", "").strip()
-                    print(f" Corte: {corte_text} ")
-                    print(f"  Procesando lupa {idx+1} de {len(lupas)} (caratulado: {caratulado})")
-                    
-                    lupa_link.scroll_into_view_if_needed()
-                    random_sleep(0.5, 1)
-                    lupa_link.click()
-                    random_sleep(1, 2)
-                    self._verificar_modal()
-                    self._verificar_tabla()
-                    movimientos_nuevos = self._procesar_contenido(tab_name, caratulado,corte_text)
-                    self._cerrar_modal()
-                    
-                    #break para procesar solo la primera lupa
-                    #break
-                    
-                except Exception as e:
-                    print(f"  Error procesando la lupa {idx+1}: {str(e)}")
-                    self._manejar_error(e)
-                    self._cerrar_modal()
-                    continue
             return True
         except Exception as e:
             self._manejar_error(e)
@@ -2118,6 +2124,7 @@ class ControladorLupaCobranza(ControladorLupa):
 def obtener_controlador_lupa(tipo, page):
     controladores = {
         'suprema': ControladorLupaSuprema,
+        'apelaciones': ControladorLupaApelacionesPrincipal,
         'apelaciones_principal': ControladorLupaApelacionesPrincipal,
         'civil': ControladorLupaCivil,
         'cobranza': ControladorLupaCobranza
