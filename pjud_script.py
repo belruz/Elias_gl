@@ -29,7 +29,7 @@ logging.basicConfig(
     ]
 )
 
-# Variables globales
+# Variables globales para correo
 EMAIL_SENDER = os.getenv("EMAIL_SENDER_TEST")
 EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD_TEST")
 EMAIL_RECIPIENTS = os.getenv("EMAIL_RECIPIENTS_TEST", "").split(",")
@@ -56,8 +56,8 @@ TAB_FUNCTIONS = {
     "Corte Apelaciones": "buscApe",
     "Civil": "buscCiv",
     #"Laboral": "buscLab",
-    "Penal": "buscPen",
-    #"Cobranza": "buscCob",
+    #"Penal": "buscPen",
+    "Cobranza": "buscCob",
     #"Familia": "buscFam"
 }
 

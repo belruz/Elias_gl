@@ -56,8 +56,8 @@ TAB_FUNCTIONS = {
     "Corte Apelaciones": "buscApe",
     "Civil": "buscCiv",
     #"Laboral": "buscLab",
-    "Penal": "buscPen",
-    #"Cobranza": "buscCob",
+    #"Penal": "buscPen",
+    "Cobranza": "buscCob",
     #"Familia": "buscFam"
 }
 
