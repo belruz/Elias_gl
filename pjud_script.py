@@ -1031,7 +1031,7 @@ class ControladorLupaSuprema(ControladorLupa):
             movimientos_nuevos = False
             
             # Fecha específica para Corte Suprema
-            fecha_objetivo = "01/12/2022"
+            fecha_objetivo = "12/03/2024"
             print(f"[INFO] Buscando movimientos de la fecha: {fecha_objetivo}")
             
             for movimiento in movimientos:
@@ -1299,7 +1299,7 @@ class ControladorLupaApelacionesPrincipal(ControladorLupa):
                 try:
                     folio = movimiento.query_selector("td:nth-child(1)").inner_text().strip()
                     fecha_tramite_str = movimiento.query_selector("td:nth-child(6)").inner_text().strip() 
-                    if fecha_tramite_str == "20/01/2023":
+                    if fecha_tramite_str == "12/06/2025":
                         movimientos_nuevos = True
                         carpeta_general = tab_name.replace(' ', '_')
                         carpeta_caratulado = f"{carpeta_general}/{caratulado}"
@@ -1774,7 +1774,7 @@ class ControladorLupaCivil(ControladorLupa):
             self.page.wait_for_selector('#escritosCiv table.table-bordered tbody', timeout=5000, state="attached")
             escritos = self.page.query_selector_all('#escritosCiv table.table-bordered tbody tr')
             print(f"[INFO] Se encontraron {len(escritos)} escritos por resolver")
-            fecha_objetivo_escrito = "27/06/2025"
+            fecha_objetivo_escrito = "04/07/2025"
             for escrito in escritos:
                 try:
                     fecha_ingreso = escrito.query_selector("td:nth-child(3)").inner_text().strip()
@@ -2009,7 +2009,7 @@ class ControladorLupaCobranza(ControladorLupa):
                     print(f"[INFO] Se encontraron {len(movimientos)} movimientos en el cuaderno {texto}")
                     
                     # Fecha específica según el cuaderno
-                    fecha_objetivo = "13/12/2024"
+                    fecha_objetivo = "11/08/2006"
                     
                     for movimiento in movimientos:
                         try:
