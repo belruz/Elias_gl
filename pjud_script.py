@@ -37,7 +37,7 @@ SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 587
 
 # URL base de PJUD
-BASE_URL_PJUD = os.getenv("BASE_URL_PJUD", "https://oficinajudicialvirtual.pjud.cl/")
+BASE_URL_PJUD = os.getenv("BASE_URL_PJUD")
 
 # Lista global para almacenar todos los movimientos nuevos
 MOVIMIENTOS_GLOBALES = []
