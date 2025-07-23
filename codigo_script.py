@@ -59,7 +59,7 @@ class EmailSender:
         
         msg = MIMEMultipart()
         msg['From'] = EMAIL_SENDER
-        msg['To'] = EMAIL_RECIPIENTS
+        msg['To'] = ", ".join(EMAIL_RECIPIENTS)
         msg['Subject'] = subject
 
         msg.attach(MIMEText(body, 'plain'))
@@ -1012,7 +1012,7 @@ def main():
             
             msg = MIMEMultipart('alternative')
             msg['From'] = EMAIL_SENDER
-            msg['To'] = EMAIL_RECIPIENTS
+            msg['To'] = ", ".join(EMAIL_RECIPIENTS) 
             msg['Subject'] = subject
             
             part = MIMEText(html_content, 'html')
