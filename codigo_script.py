@@ -35,9 +35,9 @@ os.makedirs(DOWNLOAD_DIR_SII, exist_ok=True)
 os.makedirs(DOWNLOAD_DIR_BCN, exist_ok=True)
 
 try:
-    EMAIL_SENDER = "ignacia@gearlabs.cl"
-    EMAIL_PASSWORD = "xwqn ienj iiyl nzxq"
-    EMAIL_RECIPIENTS = os.getenv("EMAIL_RECIPIENTS",  "mario@elias.cl, ignacia@gearlabs.cl, mmoyano@gearlabs.cl, daniela@gearlabs.cl, yareska@gearlabs.cl, nicolas@gearlabs.cl")
+    EMAIL_SENDER = os.getenv("EMAIL_SENDER_TEST")
+    EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD_TEST")
+    EMAIL_RECIPIENTS = os.getenv("EMAIL_RECIPIENTS_TEST", "").split(",") 
     
     if not all([EMAIL_SENDER, EMAIL_PASSWORD, EMAIL_RECIPIENTS]):
         raise ValueError("Missing email credentials")
