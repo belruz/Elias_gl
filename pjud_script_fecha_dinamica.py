@@ -29,7 +29,7 @@ logging.basicConfig(
     ]
 )
 
-# Variables globales
+# Variables globales para correo
 EMAIL_SENDER = os.getenv("EMAIL_SENDER_TEST")
 EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD_TEST")
 EMAIL_RECIPIENTS = os.getenv("EMAIL_RECIPIENTS_TEST", "").split(",")
@@ -77,7 +77,7 @@ def obtener_fecha_actual_str():
     return datetime.datetime.now().strftime("%d/%m/%Y")
 
 class MovimientoPJUD:
-    def __init__(self, folio, seccion, caratulado, fecha, tribunal=None, corte=None, libro=None, rit=None, rol=None, pdf_path=None, cuaderno=None, archivos_apelaciones=None, historia_causa_cuaderno=None):
+    def __init__(self, folio, seccion, caratulado, fecha, tribunal=None, corte=None, libro=None, rit=None, rol=None, pdf_path=None, pdf_paths=None, cuaderno=None, archivos_apelaciones=None, historia_causa_cuaderno=None):
         self.folio = folio
         self.seccion = seccion
         self.caratulado = caratulado
@@ -87,13 +87,24 @@ class MovimientoPJUD:
         self.libro = libro
         self.rit = rit
         self.rol = rol
-        self.pdf_path = pdf_path 
+        # Mantener compatibilidad con pdf_path para casos antiguos, pero priorizar pdf_paths
+        if pdf_paths:
+            self.pdf_paths = pdf_paths
+        elif pdf_path:
+            self.pdf_paths = [pdf_path]
+        else:
+            self.pdf_paths = []
         self.cuaderno = cuaderno
         self.archivos_apelaciones = archivos_apelaciones or []  # Lista de archivos de apelaciones para corte suprema
         self.historia_causa_cuaderno = historia_causa_cuaderno 
     
+    @property
+    def pdf_path(self):
+        """Mantener compatibilidad con código existente - devuelve el primer PDF"""
+        return self.pdf_paths[0] if self.pdf_paths else None
+    
     def tiene_pdf(self):
-        return self.pdf_path is not None and os.path.exists(self.pdf_path)
+        return len(self.pdf_paths) > 0 and all(os.path.exists(path) for path in self.pdf_paths)
     
     def tiene_archivos_apelaciones(self):
         return len(self.archivos_apelaciones) > 0
@@ -109,7 +120,8 @@ class MovimientoPJUD:
             'rol': self.rol,
             'tribunal': self.tribunal,
             'corte': self.corte,
-            'pdf_path': self.pdf_path,
+            'pdf_path': self.pdf_path,  # Mantener compatibilidad
+            'pdf_paths': self.pdf_paths,
             'cuaderno': self.cuaderno,
             'archivos_apelaciones': self.archivos_apelaciones,
             'historia_causa_cuaderno': self.historia_causa_cuaderno
@@ -660,50 +672,58 @@ class ControladorLupa:
                             else:
                                 panel.screenshot(path=detalle_panel_path)
                                 print(f"[INFO] Captura del panel de información guardada: {detalle_panel_path}")
-                        pdf_form = movimiento.query_selector("form[name='frmPdf']")
-                        pdf_path = None
-                        if pdf_form:
-                            token = pdf_form.query_selector("input[name='valorFile']").get_attribute("value")
-                            causa_str = f"Causa_{numero_causa}_" if numero_causa else ""
-                            # Nombre temporal antes de tener el resumen
-                            pdf_filename_tmp = f"{carpeta_caratulado}/{fecha_tramite_pdf} {libro_pdf} temp.pdf"
-                            preview_path = pdf_filename_tmp.replace('.pdf', '_preview.png')
+                        pdf_forms = movimiento.query_selector_all("form[name='frmPdf']")
+                        pdf_paths = []
+                        if pdf_forms:
+                            print(f"[INFO] Se encontraron {len(pdf_forms)} documentos para el folio {folio}")
+                            for doc_idx, pdf_form in enumerate(pdf_forms):
+                                token = pdf_form.query_selector("input[name='valorFile']").get_attribute("value")
+                                causa_str = f"Causa_{numero_causa}_" if numero_causa else ""
+                                
+                                # Agregar sufijo para múltiples documentos
+                                doc_suffix = f"_doc{doc_idx + 1}" if len(pdf_forms) > 1 else ""
+                                # Nombre temporal antes de tener el resumen
+                                pdf_filename_tmp = f"{carpeta_caratulado}/{fecha_tramite_pdf} {libro_pdf} temp.pdf"
+                                preview_path = pdf_filename_tmp.replace('.pdf', '_preview.png')
 
-                            if token:
-                                base_url = "https://oficinajudicialvirtual.pjud.cl/misCausas/suprema/documentos/docCausaSuprema.php?valorFile="
-                                original_url = base_url + token
-                                try:
-                                    pdf_descargado = descargar_pdf_directo(original_url, pdf_filename_tmp, self.page)
-                                    if pdf_descargado:                                        
-                                        resumen_pdf = extraer_resumen_pdf(pdf_filename_tmp)
-                                        resumen_pdf_limpio = limpiar_nombre_archivo(resumen_pdf)
-                                        # Nombre final
-                                        pdf_filename = f"{carpeta_caratulado}/{fecha_tramite_pdf} {libro_pdf} {resumen_pdf_limpio}.pdf"
-                                        # Renombrar el archivo temporal al nombre final
-                                        try:
-                                            os.rename(pdf_filename_tmp, pdf_filename)
-                                        except Exception as e:
-                                            print(f"[WARN] No se pudo renombrar el archivo temporal: {pdf_filename_tmp} -> {pdf_filename} - {e}")
-                                        finally:
-                                            if os.path.exists(pdf_filename_tmp):
-                                                try:
-                                                    os.remove(pdf_filename_tmp)
-                                                    print(f"[INFO] Archivo temporal eliminado: {pdf_filename_tmp}")
-                                                except Exception as e:
-                                                    print(f"[WARN] No se pudo eliminar el archivo temporal: {pdf_filename_tmp} - {e}")                                        
-                                        pdf_path = pdf_filename
-                                        preview_path = pdf_filename.replace('.pdf', '_preview.png')
+                                if token:
+                                    base_url = "https://oficinajudicialvirtual.pjud.cl/misCausas/suprema/documentos/docCausaSuprema.php?valorFile="
+                                    original_url = base_url + token
+                                    try:
+                                        pdf_descargado = descargar_pdf_directo(original_url, pdf_filename_tmp, self.page)
+                                        if pdf_descargado:                                        
+                                            resumen_pdf = extraer_resumen_pdf(pdf_filename_tmp)
+                                            resumen_pdf_limpio = limpiar_nombre_archivo(resumen_pdf)
+                                            # Nombre final
+                                            pdf_filename = f"{carpeta_caratulado}/{fecha_tramite_pdf} {libro_pdf}{doc_suffix} {resumen_pdf_limpio}.pdf"
+                                            # Renombrar el archivo temporal al nombre final
+                                            try:
+                                                os.rename(pdf_filename_tmp, pdf_filename)
+                                            except Exception as e:
+                                                print(f"[WARN] No se pudo renombrar el archivo temporal: {pdf_filename_tmp} -> {pdf_filename} - {e}")
+                                            finally:
+                                                if os.path.exists(pdf_filename_tmp):
+                                                    try:
+                                                        os.remove(pdf_filename_tmp)
+                                                        print(f"[INFO] Archivo temporal eliminado: {pdf_filename_tmp}")
+                                                    except Exception as e:
+                                                        print(f"[WARN] No se pudo eliminar el archivo temporal: {pdf_filename_tmp} - {e}")                                        
+                                            pdf_paths.append(pdf_filename)
+                                            preview_path = pdf_filename.replace('.pdf', '_preview.png')
 
-                                        # Generar preview si no existe
-                                        if not os.path.exists(preview_path):
-                                            print(f"[INFO] Generando vista previa del PDF para {pdf_filename}...")
-                                            generar_preview_pdf(pdf_filename, preview_path)
-                                    else:
-                                        print(f"[ERROR] No se pudo descargar el PDF para folio {folio}")
-                                except Exception as e:
-                                    print(f"[ERROR] Error descargando PDF para folio {folio}, causa {numero_causa}: {e}")
+                                            # Generar preview si no existe
+                                            if not os.path.exists(preview_path):
+                                                print(f"[INFO] Generando vista previa del PDF para {pdf_filename}...")
+                                                generar_preview_pdf(pdf_filename, preview_path)
+                                        else:
+                                            print(f"[ERROR] No se pudo descargar el PDF {doc_idx + 1} para folio {folio}")
+                                    except Exception as e:
+                                        print(f"[ERROR] Error descargando PDF {doc_idx + 1} para folio {folio}, causa {numero_causa}: {e}")
                         else:
                             print(f"[WARN] No hay PDF disponible para el movimiento {folio}")
+                        
+                        # Usar el primer PDF como referencia principal para compatibilidad
+                        pdf_path = pdf_paths[0] if pdf_paths else None
                                                 
                         # Crear y agregar el movimiento a la lista global usando la nueva función
                         movimiento_pjud = MovimientoPJUD(
@@ -882,39 +902,48 @@ class ControladorLupa:
                     if fecha_tramite_str == fecha_actual_str:
                         print(f"  Movimiento nuevo encontrado - Folio: {folio}, Fecha: {fecha_tramite_str}")
                         
-                        # Verificar si hay PDF disponible
-                        pdf_form = movimiento.query_selector("form[name='frmDoc']")
-                        if pdf_form:
-                            # Obtener el token para descargar el PDF 
-                            token = pdf_form.query_selector("input[name='valorDoc']").get_attribute("value")
-                            causa_str = f"Causa_{numero_causa}_" if numero_causa else ""
-                            pdf_filename = f"{subcarpeta}/{causa_str}folio_{folio}_fecha_{fecha_tramite_str.replace('/', '_')}.pdf"
-                            
-                            preview_path = pdf_filename.replace('.pdf', '_preview.png')
+                        # Verificar si hay PDFs disponibles
+                        pdf_forms = movimiento.query_selector_all("form[name='frmDoc']")
+                        if pdf_forms:
+                            print(f"  Se encontraron {len(pdf_forms)} documentos para el folio {folio}")
+                            # Procesar cada formulario/documento
+                            for doc_idx, pdf_form in enumerate(pdf_forms):
+                                # Obtener el token para descargar el PDF 
+                                token = pdf_form.query_selector("input[name='valorDoc']").get_attribute("value")
+                                causa_str = f"Causa_{numero_causa}_" if numero_causa else ""
+                                
+                                # Agregar sufijo para múltiples documentos
+                                doc_suffix = f"_doc{doc_idx + 1}" if len(pdf_forms) > 1 else ""
+                                pdf_filename = f"{subcarpeta}/{causa_str}folio_{folio}_fecha_{fecha_tramite_str.replace('/', '_')}.pdf"
+                                if len(pdf_forms) > 1:
+                                    base_name, ext = os.path.splitext(pdf_filename)
+                                    pdf_filename = f"{base_name}{doc_suffix}{ext}"
+                                
+                                preview_path = pdf_filename.replace('.pdf', '_preview.png')
 
-                            # Construir la URL para descargar el PDF
-                            if token:
-                                # URL para la descarga de PDF en Corte Apelaciones
-                                base_url = "https://oficinajudicialvirtual.pjud.cl/misCausas/apelaciones/documentos/docCausaApelaciones.php?valorDoc="
-                                original_url = base_url + token
-                                
-                                # Descargar el PDF
-                                print(f"  Descargando PDF de Apelaciones...")
-                                pdf_descargado = descargar_pdf_directo(original_url, pdf_filename, self.page)
-                                
-                                if pdf_descargado:
-                                    archivos_apelaciones.append(pdf_filename)
-                                    # Generar una vista previa del PDF (mitad superior, redimensionada)
-                                    try:
-                                        print(f"  Generando vista previa del PDF para {pdf_filename}...")
-                                        generar_preview_pdf(pdf_filename, preview_path)
-                                        if os.path.exists(preview_path):
-                                            archivos_apelaciones.append(preview_path)
-                                            print(f"  Vista previa guardada en: {preview_path}")
-                                        else:
-                                            print(f"  No se pudo generar la vista previa para {pdf_filename}")
-                                    except Exception as prev_error:
-                                        print(f"  Error al generar la vista previa del PDF: {str(prev_error)}")
+                                # Construir la URL para descargar el PDF
+                                if token:
+                                    # URL para la descarga de PDF en Corte Apelaciones
+                                    base_url = "https://oficinajudicialvirtual.pjud.cl/misCausas/apelaciones/documentos/docCausaApelaciones.php?valorDoc="
+                                    original_url = base_url + token
+                                    
+                                    # Descargar el PDF
+                                    print(f"  Descargando PDF de Apelaciones {doc_idx + 1}...")
+                                    pdf_descargado = descargar_pdf_directo(original_url, pdf_filename, self.page)
+                                    
+                                    if pdf_descargado:
+                                        archivos_apelaciones.append(pdf_filename)
+                                        # Generar una vista previa del PDF (mitad superior, redimensionada)
+                                        try:
+                                            print(f"  Generando vista previa del PDF para {pdf_filename}...")
+                                            generar_preview_pdf(pdf_filename, preview_path)
+                                            if os.path.exists(preview_path):
+                                                archivos_apelaciones.append(preview_path)
+                                                print(f"  Vista previa guardada en: {preview_path}")
+                                            else:
+                                                print(f"  No se pudo generar la vista previa para {pdf_filename}")
+                                        except Exception as prev_error:
+                                            print(f"  Error al generar la vista previa del PDF: {str(prev_error)}")
                         else:
                             print(f"  No hay PDF disponible para el movimiento {folio}")
                 except Exception as e:
@@ -1051,49 +1080,61 @@ class ControladorLupaSuprema(ControladorLupa):
                                     print(f"[INFO] Captura del panel de información guardada: {detalle_panel_path}")
                                 except Exception as e:
                                     print(f"[WARN] No se pudo tomar la captura del panel: {str(e)}")
-                        pdf_form = movimiento.query_selector("form[name='frmPdf']")
-                        pdf_path = None
-                        if pdf_form:
-                            token = pdf_form.query_selector("input[name='valorFile']").get_attribute("value")
-                            # Construir nombre base del archivo usando fecha y libro
-                            fecha_tramite_pdf = fecha_tramite_str[6:10] + fecha_tramite_str[3:5] + fecha_tramite_str[0:2]
-                            libro_pdf = libro_text.replace("Libro :", "").strip().replace("/", "").replace("-", "")
-                            # Nombre temporal antes de tener el resumen
-                            pdf_filename_tmp = f"{carpeta_caratulado}/{fecha_tramite_pdf} {libro_pdf}_temp.pdf"
-                            preview_path = pdf_filename_tmp.replace('.pdf', '_preview.png')
+                        pdf_forms = movimiento.query_selector_all("form[name='frmPdf']")
+                        pdf_paths = []
+                        if pdf_forms:
+                            print(f"[INFO] Se encontraron {len(pdf_forms)} documentos para el folio {folio}")
+                            for doc_idx, pdf_form in enumerate(pdf_forms):
+                                token = pdf_form.query_selector("input[name='valorFile']").get_attribute("value")
+                                # Construir nombre base del archivo usando fecha y libro
+                                fecha_tramite_pdf = fecha_tramite_str[6:10] + fecha_tramite_str[3:5] + fecha_tramite_str[0:2]
+                                libro_pdf = libro_text.replace("Libro :", "").strip().replace("/", "").replace("-", "")
+                                
+                                # Agregar sufijo para múltiples documentos
+                                doc_suffix = f"_doc{doc_idx + 1}" if len(pdf_forms) > 1 else ""
+                                # Nombre temporal antes de tener el resumen
+                                pdf_filename_tmp = f"{carpeta_caratulado}/{fecha_tramite_pdf} {libro_pdf}_temp.pdf"
+                                preview_path = pdf_filename_tmp.replace('.pdf', '_preview.png')
 
-                            if token:
-                                base_url = "https://oficinajudicialvirtual.pjud.cl/misCausas/suprema/documentos/docCausaSuprema.php?valorFile="
-                                original_url = base_url + token
-                                try:
-                                    pdf_descargado = descargar_pdf_directo(original_url, pdf_filename_tmp, self.page)
-                                    if pdf_descargado:
-                                        resumen_pdf = extraer_resumen_pdf(pdf_filename_tmp)
-                                        resumen_pdf_limpio = limpiar_nombre_archivo(resumen_pdf)
-                                        pdf_filename = f"{carpeta_caratulado}/{fecha_tramite_pdf} {libro_pdf} {resumen_pdf_limpio}.pdf"
-                                        try:
-                                            os.rename(pdf_filename_tmp, pdf_filename)
-                                        except Exception as e:
-                                            print(f"[WARN] No se pudo renombrar el archivo temporal: {pdf_filename_tmp} -> {pdf_filename} - {e}")
-                                        finally:
-                                            if os.path.exists(pdf_filename_tmp):
-                                                try:
-                                                    os.remove(pdf_filename_tmp)
-                                                    print(f"[INFO] Archivo temporal eliminado: {pdf_filename_tmp}")
-                                                except Exception as e:
-                                                    print(f"[WARN] No se pudo eliminar el archivo temporal: {pdf_filename_tmp} - {e}")
-                                        pdf_path = pdf_filename
-                                        preview_path = pdf_filename.replace('.pdf', '_preview.png')
-                                        # Generar preview si no existe
-                                        if not os.path.exists(preview_path):
-                                            print(f"[INFO] Generando vista previa del PDF para {pdf_filename}...")
-                                            generar_preview_pdf(pdf_filename, preview_path)
-                                    else:
-                                        print(f"[ERROR] No se pudo descargar el PDF para folio {folio}")
-                                except Exception as e:
-                                    print(f"[ERROR] Error descargando PDF para folio {folio}, causa {numero_causa}: {e}")
+                                if token:
+                                    base_url = "https://oficinajudicialvirtual.pjud.cl/misCausas/suprema/documentos/docCausaSuprema.php?valorFile="
+                                    original_url = base_url + token
+                                    try:
+                                        pdf_descargado = descargar_pdf_directo(original_url, pdf_filename_tmp, self.page)
+                                        if pdf_descargado:
+                                            resumen_pdf = extraer_resumen_pdf(pdf_filename_tmp)
+                                            resumen_pdf_limpio = limpiar_nombre_archivo(resumen_pdf)
+                                            pdf_filename = f"{carpeta_caratulado}/{fecha_tramite_pdf} {libro_pdf} {resumen_pdf_limpio}.pdf"
+                                            # Si hay múltiples documentos, agregar sufijo al nombre final
+                                            if len(pdf_forms) > 1:
+                                                base_name, ext = os.path.splitext(pdf_filename)
+                                                pdf_filename = f"{base_name}{doc_suffix}{ext}"
+                                            try:
+                                                os.rename(pdf_filename_tmp, pdf_filename)
+                                            except Exception as e:
+                                                print(f"[WARN] No se pudo renombrar el archivo temporal: {pdf_filename_tmp} -> {pdf_filename} - {e}")
+                                            finally:
+                                                if os.path.exists(pdf_filename_tmp):
+                                                    try:
+                                                        os.remove(pdf_filename_tmp)
+                                                        print(f"[INFO] Archivo temporal eliminado: {pdf_filename_tmp}")
+                                                    except Exception as e:
+                                                        print(f"[WARN] No se pudo eliminar el archivo temporal: {pdf_filename_tmp} - {e}")
+                                            pdf_paths.append(pdf_filename)
+                                            preview_path = pdf_filename.replace('.pdf', '_preview.png')
+                                            # Generar preview si no existe
+                                            if not os.path.exists(preview_path):
+                                                print(f"[INFO] Generando vista previa del PDF para {pdf_filename}...")
+                                                generar_preview_pdf(pdf_filename, preview_path)
+                                        else:
+                                            print(f"[ERROR] No se pudo descargar el PDF {doc_idx + 1} para folio {folio}")
+                                    except Exception as e:
+                                        print(f"[ERROR] Error descargando PDF {doc_idx + 1} para folio {folio}, causa {numero_causa}: {e}")
                         else:
                             print(f"[WARN] No hay PDF disponible para el movimiento {folio}")
+                        
+                        # Usar el primer PDF como referencia principal para compatibilidad
+                        pdf_path = pdf_paths[0] if pdf_paths else None
                         
                         # Crear y agregar el movimiento a la lista global
                         movimiento_pjud = MovimientoPJUD(
@@ -1291,46 +1332,58 @@ class ControladorLupaApelacionesPrincipal(ControladorLupa):
                                     print(f"[INFO] Captura del panel de información guardada: {detalle_panel_path}")
                                 except Exception as e:
                                     print(f"[WARN] No se pudo tomar la captura del panel: {str(e)}")
-                        pdf_form = movimiento.query_selector("form[name='frmDoc']")
-                        pdf_path = None
-                        if pdf_form:
-                            token = pdf_form.query_selector("input[name='valorDoc']").get_attribute("value")
-                            # Construir nombre base del archivo usando fecha y libro
-                            fecha_tramite_pdf = fecha_tramite_str[6:10] + fecha_tramite_str[3:5] + fecha_tramite_str[0:2]
-                            libro_pdf = libro_text.replace("Libro :", "").strip().replace("/", "").replace("-", "")
-                            # Nombre temporal antes de tener el resumen
-                            pdf_filename_tmp = f"{carpeta_caratulado}/{fecha_tramite_pdf} {libro_pdf}_temp.pdf"
-                            preview_path = pdf_filename_tmp.replace('.pdf', '_preview.png')
+                        pdf_forms = movimiento.query_selector_all("form[name='frmDoc']")
+                        pdf_paths = []
+                        if pdf_forms:
+                            print(f"[INFO] Se encontraron {len(pdf_forms)} documentos para el folio {folio}")
+                            for doc_idx, pdf_form in enumerate(pdf_forms):
+                                token = pdf_form.query_selector("input[name='valorDoc']").get_attribute("value")
+                                # Construir nombre base del archivo usando fecha y libro
+                                fecha_tramite_pdf = fecha_tramite_str[6:10] + fecha_tramite_str[3:5] + fecha_tramite_str[0:2]
+                                libro_pdf = libro_text.replace("Libro :", "").strip().replace("/", "").replace("-", "")
+                                
+                                # Agregar sufijo para múltiples documentos
+                                doc_suffix = f"_doc{doc_idx + 1}" if len(pdf_forms) > 1 else ""
+                                # Nombre temporal antes de tener el resumen
+                                pdf_filename_tmp = f"{carpeta_caratulado}/{fecha_tramite_pdf} {libro_pdf}_temp.pdf"
+                                preview_path = pdf_filename_tmp.replace('.pdf', '_preview.png')
 
-                            if token:
-                                base_url = "https://oficinajudicialvirtual.pjud.cl/misCausas/apelaciones/documentos/docCausaApelaciones.php?valorDoc="
-                                original_url = base_url + token
-                                pdf_descargado = descargar_pdf_directo(original_url, pdf_filename_tmp, self.page)
-                                if pdf_descargado:
-                                    resumen_pdf = extraer_resumen_pdf(pdf_filename_tmp)
-                                    resumen_pdf_limpio = limpiar_nombre_archivo(resumen_pdf)
-                                    pdf_filename = f"{carpeta_caratulado}/{fecha_tramite_pdf} {libro_pdf} {resumen_pdf_limpio}.pdf"
-                                    try:
-                                        os.rename(pdf_filename_tmp, pdf_filename)
-                                    except Exception as e:
-                                        print(f"[WARN] No se pudo renombrar el archivo temporal: {pdf_filename_tmp} -> {pdf_filename} - {e}")
-                                    finally:
-                                        if os.path.exists(pdf_filename_tmp):
-                                            try:
-                                                os.remove(pdf_filename_tmp)
-                                                print(f"[INFO] Archivo temporal eliminado: {pdf_filename_tmp}")
-                                            except Exception as e:
-                                                print(f"[WARN] No se pudo eliminar el archivo temporal: {pdf_filename_tmp} - {e}")
-                                    pdf_path = pdf_filename
-                                    preview_path = pdf_filename.replace('.pdf', '_preview.png')
-                                    # Generar vista previa si no existe
-                                    if not os.path.exists(preview_path):
-                                        print(f"[INFO] Generando vista previa del PDF para {pdf_filename}...")
-                                        generar_preview_pdf(pdf_filename, preview_path)
-                                else:
-                                    print(f"[ERROR] No se pudo descargar el PDF para folio {folio}")
+                                if token:
+                                    base_url = "https://oficinajudicialvirtual.pjud.cl/misCausas/apelaciones/documentos/docCausaApelaciones.php?valorDoc="
+                                    original_url = base_url + token
+                                    pdf_descargado = descargar_pdf_directo(original_url, pdf_filename_tmp, self.page)
+                                    if pdf_descargado:
+                                        resumen_pdf = extraer_resumen_pdf(pdf_filename_tmp)
+                                        resumen_pdf_limpio = limpiar_nombre_archivo(resumen_pdf)
+                                        pdf_filename = f"{carpeta_caratulado}/{fecha_tramite_pdf} {libro_pdf} {resumen_pdf_limpio}.pdf"
+                                        # Si hay múltiples documentos, agregar sufijo al nombre final
+                                        if len(pdf_forms) > 1:
+                                            base_name, ext = os.path.splitext(pdf_filename)
+                                            pdf_filename = f"{base_name}{doc_suffix}{ext}"
+                                        try:
+                                            os.rename(pdf_filename_tmp, pdf_filename)
+                                        except Exception as e:
+                                            print(f"[WARN] No se pudo renombrar el archivo temporal: {pdf_filename_tmp} -> {pdf_filename} - {e}")
+                                        finally:
+                                            if os.path.exists(pdf_filename_tmp):
+                                                try:
+                                                    os.remove(pdf_filename_tmp)
+                                                    print(f"[INFO] Archivo temporal eliminado: {pdf_filename_tmp}")
+                                                except Exception as e:
+                                                    print(f"[WARN] No se pudo eliminar el archivo temporal: {pdf_filename_tmp} - {e}")
+                                        pdf_paths.append(pdf_filename)
+                                        preview_path = pdf_filename.replace('.pdf', '_preview.png')
+                                        # Generar vista previa si no existe
+                                        if not os.path.exists(preview_path):
+                                            print(f"[INFO] Generando vista previa del PDF para {pdf_filename}...")
+                                            generar_preview_pdf(pdf_filename, preview_path)
+                                    else:
+                                        print(f"[ERROR] No se pudo descargar el PDF {doc_idx + 1} para folio {folio}")
                         else:
                             print(f"[WARN] No hay PDF disponible para el movimiento {folio}")
+                        
+                        # Usar el primer PDF como referencia principal para compatibilidad
+                        pdf_path = pdf_paths[0] if pdf_paths else None
                         
                         # Crear y agregar el movimiento a la lista global
                         movimiento_pjud = MovimientoPJUD(
@@ -1563,68 +1616,101 @@ class ControladorLupaCivil(ControladorLupa):
                                 if not os.path.exists(carpeta_historia):
                                     os.makedirs(carpeta_historia)
                                 print(f"[INFO] Movimiento nuevo encontrado - Folio: {folio}, Fecha: {fecha_tramite_str}")
-                                # Buscar el formulario de PDF
-                                pdf_form = movimiento.query_selector("form[name='form']")
-                                pdf_path = None
-                                if pdf_form:
-                                    token = pdf_form.query_selector("input[name='dtaDoc']").get_attribute("value")
-                                    fecha_tramite_pdf = fecha_tramite_str[6:10] + fecha_tramite_str[3:5] + fecha_tramite_str[0:2]
-                                    # Extraer el texto del rol para el nombre del PDF
-                                    panel = self.page.query_selector("#modalDetalleMisCauCivil .modal-body .panel.panel-default")
-                                    rol_td = panel.query_selector("td:has-text('rol')") if panel else None
-                                    if rol_td:
-                                        rol_text = rol_td.inner_text()
-                                        rol_pdf = rol_text.replace("ROL: ", "").strip().replace("/", " ").replace("-", " ")
-                                    else:
-                                        rol_pdf = "sin rol"
-                                    # Nombre temporal antes de tener el resumen
-                                    pdf_filename_tmp = f"{carpeta_historia}/{fecha_tramite_pdf} {folio} {rol_pdf}_temp.pdf"
-                                    preview_path = pdf_filename_tmp.replace('.pdf', '_preview.png')
-
-                                    if token:
-                                        # Determinar la URL base según el tipo de documento
-                                        if "docuS.php" in pdf_form.get_attribute("action"):
-                                            base_url = "https://oficinajudicialvirtual.pjud.cl/misCausas/civil/documentos/docuS.php?dtaDoc="
+                                # Buscar TODOS los formularios de PDF (form y certCivil)
+                                pdf_forms = movimiento.query_selector_all("form")
+                                # Filtrar solo los formularios que tienen inputs con tokens PDF
+                                pdf_forms_validos = []
+                                for form in pdf_forms:
+                                    if form.query_selector("input[name='dtaDoc']") or form.query_selector("input[name='dtaCert']"):
+                                        pdf_forms_validos.append(form)
+                                pdf_forms = pdf_forms_validos
+                                pdf_paths = []
+                                if pdf_forms:
+                                    print(f"[INFO] Se encontraron {len(pdf_forms)} documentos para el folio {folio}")
+                                    for doc_idx, pdf_form in enumerate(pdf_forms):
+                                        # Obtener el token según el tipo de formulario
+                                        token_input = pdf_form.query_selector("input[name='dtaDoc']")
+                                        if token_input:
+                                            token = token_input.get_attribute("value")
+                                            token_type = "dtaDoc"
                                         else:
-                                            base_url = "https://oficinajudicialvirtual.pjud.cl/misCausas/civil/documentos/docuN.php?dtaDoc="
-                                        original_url = base_url + token
-                                        pdf_descargado = descargar_pdf_directo(original_url, pdf_filename_tmp, self.page)
-                                        if pdf_descargado:
-                                            resumen_pdf = extraer_resumen_pdf(pdf_filename_tmp)
-                                            print(f"[DEBUG] Resumen antes de limpiar: {resumen_pdf!r}")
-                                            resumen_pdf_limpio = limpiar_nombre_archivo(resumen_pdf)
-                                            print(f"[DEBUG] Resumen después de limpiar: {resumen_pdf_limpio!r}")
+                                            token_input = pdf_form.query_selector("input[name='dtaCert']")
+                                            if token_input:
+                                                token = token_input.get_attribute("value")
+                                                token_type = "dtaCert"
+                                            else:
+                                                print(f"[WARN] No se encontró token en formulario {doc_idx + 1}")
+                                                continue
+                                        
+                                        fecha_tramite_pdf = fecha_tramite_str[6:10] + fecha_tramite_str[3:5] + fecha_tramite_str[0:2]
+                                        # Extraer el texto del rol para el nombre del PDF
+                                        panel = self.page.query_selector("#modalDetalleMisCauCivil .modal-body .panel.panel-default")
+                                        rol_td = panel.query_selector("td:has-text('rol')") if panel else None
+                                        if rol_td:
+                                            rol_text = rol_td.inner_text()
+                                            rol_pdf = rol_text.replace("ROL: ", "").strip().replace("/", " ").replace("-", " ")
+                                        else:
+                                            rol_pdf = "sin rol"
+                                        
+                                        # Agregar sufijo para múltiples documentos y tipo de documento
+                                        doc_suffix = f"_doc{doc_idx + 1}" if len(pdf_forms) > 1 else ""
+                                        tipo_suffix = "_cert" if token_type == "dtaCert" else ""
+                                        # Nombre temporal antes de tener el resumen
+                                        pdf_filename_tmp = f"{carpeta_historia}/{fecha_tramite_pdf} {folio} {rol_pdf}{tipo_suffix}_temp.pdf"
+                                        preview_path = pdf_filename_tmp.replace('.pdf', '_preview.png')
 
-                                            pdf_filename = f"{carpeta_historia}/{fecha_tramite_pdf} {folio} {rol_pdf} {resumen_pdf_limpio}.pdf"
-                                            # Evitar sobrescribir archivos existentes
-                                            if os.path.exists(pdf_filename):
-                                                print(f"[WARN] El archivo final {pdf_filename} ya existe. Se eliminará para evitar conflicto.")
-                                                os.remove(pdf_filename)
-                                            # Limitar el nombre del archivo si es demasiado largo
-                                            max_filename_len = 156
-                                            base, ext = os.path.splitext(pdf_filename)
-                                            if len(pdf_filename) > max_filename_len:
-                                                pdf_filename = base[:max_filename_len - len(ext)] + ext
-                                            #renombrar el archivo temporal al nombre final
-                                            try:
-                                                os.rename(pdf_filename_tmp, pdf_filename)
-                                            except Exception as e:
-                                                print(f"[WARN] No se pudo renombrar el archivo temporal: {pdf_filename_tmp} -> {pdf_filename} - {e}")
-                                            finally:
-                                                if os.path.exists(pdf_filename_tmp):
-                                                    try:
-                                                        os.remove(pdf_filename_tmp)
-                                                        print(f"[INFO] Archivo temporal eliminado: {pdf_filename_tmp}")
-                                                    except Exception as e:
-                                                        print(f"[WARN] No se pudo eliminar el archivo temporal: {pdf_filename_tmp} - {e}")
-                                            pdf_path = pdf_filename
-                                            preview_path = pdf_filename.replace('.pdf', '_preview.png')
-                                            if not os.path.exists(preview_path):
-                                                print(f"[INFO] Generando vista previa del PDF para {pdf_filename}...")
-                                                generar_preview_pdf(pdf_filename, preview_path)
+                                        if token:
+                                            # Determinar la URL base según el tipo de documento
+                                            action = pdf_form.get_attribute("action") or ""
+                                            if token_type == "dtaCert":
+                                                base_url = "https://oficinajudicialvirtual.pjud.cl/misCausas/civil/documentos/docCertificadoEscrito.php?dtaCert="
+                                            elif "docuS.php" in action:
+                                                base_url = "https://oficinajudicialvirtual.pjud.cl/misCausas/civil/documentos/docuS.php?dtaDoc="
+                                            else:
+                                                base_url = "https://oficinajudicialvirtual.pjud.cl/misCausas/civil/documentos/docuN.php?dtaDoc="
+                                            original_url = base_url + token
+                                            pdf_descargado = descargar_pdf_directo(original_url, pdf_filename_tmp, self.page)
+                                            if pdf_descargado:
+                                                resumen_pdf = extraer_resumen_pdf(pdf_filename_tmp)
+                                                print(f"[DEBUG] Resumen antes de limpiar: {resumen_pdf!r}")
+                                                resumen_pdf_limpio = limpiar_nombre_archivo(resumen_pdf)
+                                                print(f"[DEBUG] Resumen después de limpiar: {resumen_pdf_limpio!r}")
+
+                                                pdf_filename = f"{carpeta_historia}/{fecha_tramite_pdf} {folio} {rol_pdf}{tipo_suffix} {resumen_pdf_limpio}.pdf"
+                                                # Si hay múltiples documentos, agregar sufijo al nombre final
+                                                if len(pdf_forms) > 1:
+                                                    base_name, ext = os.path.splitext(pdf_filename)
+                                                    pdf_filename = f"{base_name}{doc_suffix}{ext}"
+                                                # Evitar sobrescribir archivos existentes
+                                                if os.path.exists(pdf_filename):
+                                                    print(f"[WARN] El archivo final {pdf_filename} ya existe. Se eliminará para evitar conflicto.")
+                                                    os.remove(pdf_filename)
+                                                # Limitar el nombre del archivo si es demasiado largo
+                                                max_filename_len = 156
+                                                base, ext = os.path.splitext(pdf_filename)
+                                                if len(pdf_filename) > max_filename_len:
+                                                    pdf_filename = base[:max_filename_len - len(ext)] + ext
+                                                #renombrar el archivo temporal al nombre final
+                                                try:
+                                                    os.rename(pdf_filename_tmp, pdf_filename)
+                                                except Exception as e:
+                                                    print(f"[WARN] No se pudo renombrar el archivo temporal: {pdf_filename_tmp} -> {pdf_filename} - {e}")
+                                                finally:
+                                                    if os.path.exists(pdf_filename_tmp):
+                                                        try:
+                                                            os.remove(pdf_filename_tmp)
+                                                            print(f"[INFO] Archivo temporal eliminado: {pdf_filename_tmp}")
+                                                        except Exception as e:
+                                                            print(f"[WARN] No se pudo eliminar el archivo temporal: {pdf_filename_tmp} - {e}")
+                                                pdf_paths.append(pdf_filename)
+                                                preview_path = pdf_filename.replace('.pdf', '_preview.png')
+                                                if not os.path.exists(preview_path):
+                                                    print(f"[INFO] Generando vista previa del PDF para {pdf_filename}...")
+                                                    generar_preview_pdf(pdf_filename, preview_path)
                                 else:
                                     print(f"[WARN] No hay PDF disponible para el movimiento {folio}")
 
+                                # Usar la lista completa de PDFs
                                 # Crear y agregar el movimiento a la lista global 
                                 movimiento_pjud = MovimientoPJUD(
                                     folio=folio,
@@ -1632,7 +1718,7 @@ class ControladorLupaCivil(ControladorLupa):
                                     caratulado=caratulado,
                                     rol=rol_text,
                                     fecha=fecha_tramite_str,
-                                    pdf_path=pdf_path,
+                                    pdf_paths=pdf_paths,  # Pasar la lista completa de PDFs
                                     tribunal=tribunal_text,
                                     cuaderno=texto,  # Agregamos el nombre del cuaderno
                                     historia_causa_cuaderno=texto  # Agregamos el cuaderno de historia para Civil
@@ -1698,67 +1784,78 @@ class ControladorLupaCivil(ControladorLupa):
                     fecha_ingreso = escrito.query_selector("td:nth-child(3)").inner_text().strip()
                     tipo_escrito = escrito.query_selector("td:nth-child(4)").inner_text().strip()
                     solicitante = escrito.query_selector("td:nth-child(5)").inner_text().strip()
-                    pdf_form = escrito.query_selector("form[name='formAneEsc']")
-                    pdf_path = None
+                    pdf_forms = escrito.query_selector_all("form[name='formAneEsc']")
+                    pdf_paths = []
                     if fecha_ingreso == fecha_objetivo_escrito:
                         carpeta_escritos = f"{carpeta_cuaderno}/EscritosPorResolver"
                         if not os.path.exists(carpeta_escritos):
                             os.makedirs(carpeta_escritos, exist_ok=True)
-                        # Descargar PDF si existe
-                        if pdf_form:
-                            token = pdf_form.query_selector("input[name='dtaDoc']").get_attribute("value")
-                            fecha_ingreso_limpia = limpiar_nombre_archivo(fecha_ingreso.replace("/", "-"))
-                            tipo_escrito_limpio = limpiar_nombre_archivo(tipo_escrito)
-                            pdf_filename_tmp = f"{carpeta_escritos}/{fecha_ingreso_limpia} {tipo_escrito_limpio}_temp.pdf"
-                            if token:
-                                base_url = "https://oficinajudicialvirtual.pjud.cl/misCausas/civil/documentos/docuN.php?dtaDoc="
-                                original_url = base_url + token
-                                pdf_descargado = descargar_pdf_directo(original_url, pdf_filename_tmp, self.page)
-                                if pdf_descargado:
-                                    resumen_pdf = extraer_resumen_pdf(pdf_filename_tmp)
-                                    resumen_pdf_limpio = limpiar_nombre_archivo(resumen_pdf)
+                        # Descargar PDFs si existen
+                        if pdf_forms:
+                            print(f"[INFO] Se encontraron {len(pdf_forms)} documentos para el escrito")
+                            for doc_idx, pdf_form in enumerate(pdf_forms):
+                                token = pdf_form.query_selector("input[name='dtaDoc']").get_attribute("value")
+                                fecha_ingreso_limpia = limpiar_nombre_archivo(fecha_ingreso.replace("/", "-"))
+                                tipo_escrito_limpio = limpiar_nombre_archivo(tipo_escrito)
+                                
+                                # Agregar sufijo para múltiples documentos
+                                doc_suffix = f"_doc{doc_idx + 1}" if len(pdf_forms) > 1 else ""
+                                pdf_filename_tmp = f"{carpeta_escritos}/{fecha_ingreso_limpia} {tipo_escrito_limpio}_temp.pdf"
+                                
+                                if token:
+                                    base_url = "https://oficinajudicialvirtual.pjud.cl/misCausas/civil/documentos/docuN.php?dtaDoc="
+                                    original_url = base_url + token
+                                    pdf_descargado = descargar_pdf_directo(original_url, pdf_filename_tmp, self.page)
+                                    if pdf_descargado:
+                                        resumen_pdf = extraer_resumen_pdf(pdf_filename_tmp)
+                                        resumen_pdf_limpio = limpiar_nombre_archivo(resumen_pdf)
 
-                                    # Formato fecha: AAAAMMDD
-                                    fecha_ingreso_pdf = fecha_ingreso[6:10] + fecha_ingreso[3:5] + fecha_ingreso[0:2]
-                                    # Formato rol: "ROL: V-82-2025" -> "V 82 2025"
-                                    rol_pdf = ""
-                                    if rol_text:
-                                        rol_pdf = limpiar_nombre_archivo(
-                                            rol_text.replace("ROL:", "").replace("-", " ").replace("/", " ").strip()
-                                        )
-                                    # Nombre final
-                                    pdf_filename = f"{carpeta_escritos}/{fecha_ingreso_pdf} {rol_pdf} {resumen_pdf_limpio}.pdf"
+                                        # Formato fecha: AAAAMMDD
+                                        fecha_ingreso_pdf = fecha_ingreso[6:10] + fecha_ingreso[3:5] + fecha_ingreso[0:2]
+                                        # Formato rol: "ROL: V-82-2025" -> "V 82 2025"
+                                        rol_pdf = ""
+                                        if rol_text:
+                                            rol_pdf = limpiar_nombre_archivo(
+                                                rol_text.replace("ROL:", "").replace("-", " ").replace("/", " ").strip()
+                                            )
+                                        # Nombre final
+                                        pdf_filename = f"{carpeta_escritos}/{fecha_ingreso_pdf} {rol_pdf} {resumen_pdf_limpio}.pdf"
+                                        # Si hay múltiples documentos, agregar sufijo al nombre final
+                                        if len(pdf_forms) > 1:
+                                            base_name, ext = os.path.splitext(pdf_filename)
+                                            pdf_filename = f"{base_name}{doc_suffix}{ext}"
 
-                                    if os.path.exists(pdf_filename):
-                                        print(f"[WARN] El archivo final {pdf_filename} ya existe. Se eliminará para evitar conflicto.")
-                                        os.remove(pdf_filename)
-                                    max_filename_len = 156
-                                    base, ext = os.path.splitext(pdf_filename)
-                                    if len(pdf_filename) > max_filename_len:
-                                        pdf_filename = base[:max_filename_len - len(ext)] + ext
-                                    try:
-                                        os.rename(pdf_filename_tmp, pdf_filename)
-                                    except Exception as e:
-                                        print(f"[WARN] No se pudo renombrar el archivo temporal: {pdf_filename_tmp} -> {pdf_filename} - {e}")
-                                    finally:
-                                        if os.path.exists(pdf_filename_tmp):
-                                            try:
-                                                os.remove(pdf_filename_tmp)
-                                                print(f"[INFO] Archivo temporal eliminado: {pdf_filename_tmp}")
-                                            except Exception as e:
-                                                print(f"[WARN] No se pudo eliminar el archivo temporal: {pdf_filename_tmp} - {e}")
-                                    pdf_path = pdf_filename
-                                    preview_path = pdf_filename.replace('.pdf', '_preview.png')
-                                    if not os.path.exists(preview_path):
-                                        print(f"[INFO] Generando vista previa del PDF para {pdf_filename}...")
-                                        generar_preview_pdf(pdf_filename, preview_path)
-                        # Agregar movimiento a la lista global
+                                        if os.path.exists(pdf_filename):
+                                            print(f"[WARN] El archivo final {pdf_filename} ya existe. Se eliminará para evitar conflicto.")
+                                            os.remove(pdf_filename)
+                                        max_filename_len = 156
+                                        base, ext = os.path.splitext(pdf_filename)
+                                        if len(pdf_filename) > max_filename_len:
+                                            pdf_filename = base[:max_filename_len - len(ext)] + ext
+                                        try:
+                                            os.rename(pdf_filename_tmp, pdf_filename)
+                                        except Exception as e:
+                                            print(f"[WARN] No se pudo renombrar el archivo temporal: {pdf_filename_tmp} -> {pdf_filename} - {e}")
+                                        finally:
+                                            if os.path.exists(pdf_filename_tmp):
+                                                try:
+                                                    os.remove(pdf_filename_tmp)
+                                                    print(f"[INFO] Archivo temporal eliminado: {pdf_filename_tmp}")
+                                                except Exception as e:
+                                                    print(f"[WARN] No se pudo eliminar el archivo temporal: {pdf_filename_tmp} - {e}")
+                                        pdf_paths.append(pdf_filename)
+                                        preview_path = pdf_filename.replace('.pdf', '_preview.png')
+                                        if not os.path.exists(preview_path):
+                                            print(f"[INFO] Generando vista previa del PDF para {pdf_filename}...")
+                                            generar_preview_pdf(pdf_filename, preview_path)
+                        
+                        # Agregar movimiento a la lista global con todos los PDFs
                         movimiento_pjud = MovimientoPJUD(
                             folio=None,
                             seccion=tab_name,
                             caratulado=caratulado,
                             fecha=fecha_ingreso,
-                            pdf_path=pdf_path,
+                            pdf_paths=pdf_paths,  # Pasar la lista completa de PDFs
                             historia_causa_cuaderno = cuaderno_nombre + ", Escritos por Resolver",
                             rol=rol_text,          
                             tribunal=tribunal_text 
@@ -1985,71 +2082,81 @@ class ControladorLupaCobranza(ControladorLupa):
                                     os.makedirs(carpeta_historia)                                
                                 
                                 print(f"[INFO] Movimiento nuevo encontrado - Folio: {folio}, Fecha: {fecha_tramite_str}")
-                                # Buscar el formulario de PDF
-                                pdf_form = movimiento.query_selector("form[name='frmDocH']")
-                                pdf_path = None
-                                if pdf_form:
-                                    token = pdf_form.query_selector("input[name='dtaDoc']").get_attribute("value")
-                                    fecha_tramite_pdf = fecha_tramite_str[6:10] + fecha_tramite_str[3:5] + fecha_tramite_str[0:2]
-                                    # Extraer el texto del rol para el nombre del PDF
-                                    panel = self.page.query_selector("#modalDetalleMisCauCobranza .modal-body .panel.panel-default")                                       
-                                    rit_td = panel.query_selector("td:has-text('rit')") if panel else None
-                                    if rit_td:
-                                        rit_text = rit_td.inner_text()
-                                        rit_pdf = rit_text.replace("RIT: ", "").strip().replace("/", " ").replace("-", " ")
-                                    else:
-                                        rit_pdf = "sin rit"
-                                    
-                                    folio_limpio = limpiar_nombre_archivo(folio)[:10]
-                                    rit_pdf_limpio = limpiar_nombre_archivo(rit_pdf)[:20]
-                                            
-                                    # Nombre temporal antes de tener el resumen
-                                    pdf_filename_tmp = f"{carpeta_historia}/{fecha_tramite_pdf} {folio_limpio} {rit_pdf_limpio}_temp.pdf"
-                                    preview_path = pdf_filename_tmp.replace('.pdf', '_preview.png')
+                                # Buscar los formularios de PDF
+                                pdf_forms = movimiento.query_selector_all("form[name='frmDocH']")
+                                pdf_paths = []
+                                if pdf_forms:
+                                    print(f"[INFO] Se encontraron {len(pdf_forms)} documentos para el folio {folio}")
+                                    for doc_idx, pdf_form in enumerate(pdf_forms):
+                                        token = pdf_form.query_selector("input[name='dtaDoc']").get_attribute("value")
+                                        fecha_tramite_pdf = fecha_tramite_str[6:10] + fecha_tramite_str[3:5] + fecha_tramite_str[0:2]
+                                        # Extraer el texto del rol para el nombre del PDF
+                                        panel = self.page.query_selector("#modalDetalleMisCauCobranza .modal-body .panel.panel-default")                                       
+                                        rit_td = panel.query_selector("td:has-text('rit')") if panel else None
+                                        if rit_td:
+                                            rit_text = rit_td.inner_text()
+                                            rit_pdf = rit_text.replace("RIT: ", "").strip().replace("/", " ").replace("-", " ")
+                                        else:
+                                            rit_pdf = "sin rit"
+                                        
+                                        folio_limpio = limpiar_nombre_archivo(folio)[:10]
+                                        rit_pdf_limpio = limpiar_nombre_archivo(rit_pdf)[:20]
+                                        
+                                        # Agregar sufijo para múltiples documentos
+                                        doc_suffix = f"_doc{doc_idx + 1}" if len(pdf_forms) > 1 else ""
+                                        # Nombre temporal antes de tener el resumen
+                                        pdf_filename_tmp = f"{carpeta_historia}/{fecha_tramite_pdf} {folio_limpio} {rit_pdf_limpio}_temp.pdf"
+                                        preview_path = pdf_filename_tmp.replace('.pdf', '_preview.png')
 
-                                    if token:
-                                        base_url = "https://oficinajudicialvirtual.pjud.cl/misCausas/cobranza/documentos/docuCobranza.php?dtaDoc="
-                                        original_url = base_url + token
-                                        pdf_descargado = descargar_pdf_directo(original_url, pdf_filename_tmp, self.page)
-                                        if pdf_descargado:
-                                            resumen_pdf = extraer_resumen_pdf(pdf_filename_tmp)                                                                                
-                                            print(f"[DEBUG] Resumen antes de limpiar: {resumen_pdf!r}")
-                                            
-                                            # Limpiar y limitar el resumen a 40 caracteres
-                                            resumen_pdf_limpio = limpiar_nombre_archivo(resumen_pdf)[:40]
-                                            print(f"[DEBUG] Resumen después de limpiar: {resumen_pdf_limpio!r}")
-                                           
-                                            pdf_filename = f"{carpeta_historia}/{fecha_tramite_pdf} {folio_limpio} {rit_pdf_limpio} {resumen_pdf_limpio}.pdf"
-                                            # Evitar sobrescribir archivos existentes
-                                            if os.path.exists(pdf_filename):
-                                                print(f"[WARN] El archivo final {pdf_filename} ya existe. Se eliminará para evitar conflicto.")
-                                                os.remove(pdf_filename)                                            
-                                            # Limitar el nombre del archivo si es demasiado largo
-                                            max_filename_len = 156
-                                            base, ext = os.path.splitext(pdf_filename)
-                                            if len(pdf_filename) > max_filename_len:
-                                                pdf_filename = base[:max_filename_len - len(ext)] + ext
-                                            #renombrar el archivo temporal al nombre final
-                                            try:
-                                                os.rename(pdf_filename_tmp, pdf_filename)
-                                            except Exception as e:
-                                                print(f"[WARN] No se pudo renombrar el archivo temporal: {pdf_filename_tmp} -> {pdf_filename} - {e}")
-                                            finally:
-                                                if os.path.exists(pdf_filename_tmp):
-                                                    try:
-                                                        os.remove(pdf_filename_tmp)
-                                                        print(f"[INFO] Archivo temporal eliminado: {pdf_filename_tmp}")
-                                                    except Exception as e:
-                                                        print(f"[WARN] No se pudo eliminar el archivo temporal: {pdf_filename_tmp} - {e}")
-                                            pdf_path = pdf_filename
-                                            preview_path = pdf_filename.replace('.pdf', '_preview.png')
+                                        if token:
+                                            base_url = "https://oficinajudicialvirtual.pjud.cl/misCausas/cobranza/documentos/docuCobranza.php?dtaDoc="
+                                            original_url = base_url + token
+                                            pdf_descargado = descargar_pdf_directo(original_url, pdf_filename_tmp, self.page)
+                                            if pdf_descargado:
+                                                resumen_pdf = extraer_resumen_pdf(pdf_filename_tmp)                                                                                
+                                                print(f"[DEBUG] Resumen antes de limpiar: {resumen_pdf!r}")
+                                                
+                                                # Limpiar y limitar el resumen a 40 caracteres
+                                                resumen_pdf_limpio = limpiar_nombre_archivo(resumen_pdf)[:40]
+                                                print(f"[DEBUG] Resumen después de limpiar: {resumen_pdf_limpio!r}")
+                                               
+                                                pdf_filename = f"{carpeta_historia}/{fecha_tramite_pdf} {folio_limpio} {rit_pdf_limpio} {resumen_pdf_limpio}.pdf"
+                                                # Si hay múltiples documentos, agregar sufijo al nombre final
+                                                if len(pdf_forms) > 1:
+                                                    base_name, ext = os.path.splitext(pdf_filename)
+                                                    pdf_filename = f"{base_name}{doc_suffix}{ext}"
+                                                # Evitar sobrescribir archivos existentes
+                                                if os.path.exists(pdf_filename):
+                                                    print(f"[WARN] El archivo final {pdf_filename} ya existe. Se eliminará para evitar conflicto.")
+                                                    os.remove(pdf_filename)                                            
+                                                # Limitar el nombre del archivo si es demasiado largo
+                                                max_filename_len = 156
+                                                base, ext = os.path.splitext(pdf_filename)
+                                                if len(pdf_filename) > max_filename_len:
+                                                    pdf_filename = base[:max_filename_len - len(ext)] + ext
+                                                #renombrar el archivo temporal al nombre final
+                                                try:
+                                                    os.rename(pdf_filename_tmp, pdf_filename)
+                                                except Exception as e:
+                                                    print(f"[WARN] No se pudo renombrar el archivo temporal: {pdf_filename_tmp} -> {pdf_filename} - {e}")
+                                                finally:
+                                                    if os.path.exists(pdf_filename_tmp):
+                                                        try:
+                                                            os.remove(pdf_filename_tmp)
+                                                            print(f"[INFO] Archivo temporal eliminado: {pdf_filename_tmp}")
+                                                        except Exception as e:
+                                                            print(f"[WARN] No se pudo eliminar el archivo temporal: {pdf_filename_tmp} - {e}")
+                                                pdf_paths.append(pdf_filename)
+                                                preview_path = pdf_filename.replace('.pdf', '_preview.png')
 
-                                            if not os.path.exists(preview_path):
-                                                print(f"[INFO] Generando vista previa del PDF para {pdf_filename}...")
-                                                generar_preview_pdf(pdf_filename, preview_path)
-
+                                                if not os.path.exists(preview_path):
+                                                    print(f"[INFO] Generando vista previa del PDF para {pdf_filename}...")
+                                                    generar_preview_pdf(pdf_filename, preview_path)
                                 else:
                                     print(f"[WARN] No hay PDF disponible para el movimiento {folio}")
+                                
+                                # Usar el primer PDF como referencia principal para compatibilidad
+                                pdf_path = pdf_paths[0] if pdf_paths else None
                                 
                                 # Crear y agregar el movimiento a la lista global
                                 movimiento_pjud = MovimientoPJUD(
@@ -2364,7 +2471,12 @@ def automatizar_poder_judicial(page, username, password):
                     print(f"  Fecha: {movimiento.fecha}")
                     print(f"  PDF: {'Sí' if movimiento.tiene_pdf() else 'No'}")
                     if movimiento.tiene_pdf():
-                        print(f"  Ruta PDF: {movimiento.pdf_path}")
+                        if len(movimiento.pdf_paths) == 1:
+                            print(f"  Ruta PDF: {movimiento.pdf_paths[0]}")
+                        else:
+                            print(f"  PDFs ({len(movimiento.pdf_paths)}):")
+                            for i, pdf_path in enumerate(movimiento.pdf_paths, 1):
+                                print(f"    {i}. {pdf_path}")
                 print("\n===========================================\n")
 
                 # Enviar correo solo en dos casos: si hay o no hay movimientos nuevos
@@ -2438,11 +2550,13 @@ def construir_cuerpo_html(movimientos, imagenes_cid=None):
                 <div class="movimiento">
                     <h2 style="text-align: center;">{identificador_limpio}, {mov.caratulado}{', ' + mov.corte if mov.corte else (', ' + mov.tribunal if mov.tribunal else '')}:</h2>
             """
-            # Insertar imagen preview debajo del título
-            if imagenes_cid and mov.pdf_path:
-                preview_path = mov.pdf_path.replace('.pdf', '_preview.png')
-                if preview_path in imagenes_cid:
-                    html += f'<div style="text-align: center;"><img src="cid:{imagenes_cid[preview_path]}" style="max-width:600px;display:block;margin:0 auto 10px auto;"></div>'
+            
+            # Insertar imágenes preview para todos los PDFs
+            if imagenes_cid and mov.tiene_pdf():
+                for pdf_path in mov.pdf_paths:
+                    preview_path = pdf_path.replace('.pdf', '_preview.png')
+                    if preview_path in imagenes_cid:
+                        html += f'<div style="text-align: center;"><img src="cid:{imagenes_cid[preview_path]}" style="max-width:600px;display:block;margin:0 auto 10px auto;"></div>'
             
             html += f"""
                     <ul>
@@ -2467,8 +2581,26 @@ def construir_cuerpo_html(movimientos, imagenes_cid=None):
                         <li>Historia Causa Cuaderno: {historia_formateada}</li>"""
 
             html += f"""
-                        <li>Fecha Trámite: {mov.fecha}</li>
-                        <li>Documento: {os.path.basename(mov.pdf_path) if mov.pdf_path else 'No disponible'}</li>"""
+                        <li>Fecha Trámite: {mov.fecha}</li>"""
+            
+            # Mostrar todos los documentos
+            if mov.tiene_pdf():
+                if len(mov.pdf_paths) == 1:
+                    html += f"""
+                        <li>Documento: {os.path.basename(mov.pdf_paths[0])}</li>"""
+                else:
+                    html += """
+                        <li>Documentos:
+                            <ul>"""
+                    for i, pdf_path in enumerate(mov.pdf_paths, 1):
+                        html += f"""
+                                <li>{i}. {os.path.basename(pdf_path)}</li>"""
+                    html += """
+                            </ul>
+                        </li>"""
+            else:
+                html += """
+                        <li>Documento: No disponible</li>"""
 
             # Agregar sección de Apelaciones si existe
             if mov.archivos_apelaciones:
@@ -2516,29 +2648,32 @@ def enviar_correo(movimientos=None, asunto="Notificación de Sistema de Poder Ju
         imagenes_cid = {}
         if movimientos:
             for movimiento in movimientos:
-                # Adjuntar imagen preview como inline
+                # Adjuntar imágenes preview como inline para todos los PDFs
                 if movimiento.tiene_pdf():
-                    preview_path = movimiento.pdf_path.replace('.pdf', '_preview.png')
-                    if os.path.exists(preview_path):
-                        cid = str(uuid.uuid4())
-                        imagenes_cid[preview_path] = cid
+                    for pdf_path in movimiento.pdf_paths:
+                        preview_path = pdf_path.replace('.pdf', '_preview.png')
+                        if os.path.exists(preview_path):
+                            cid = str(uuid.uuid4())
+                            imagenes_cid[preview_path] = cid
+                            try:
+                                with open(preview_path, 'rb') as img:
+                                    img_part = MIMEImage(img.read(), _subtype="png")
+                                    img_part.add_header('Content-ID', f'<{cid}>')
+                                    img_part.add_header('Content-Disposition', 'inline', filename=os.path.basename(preview_path))
+                                    msg.attach(img_part)
+                            except Exception as e:
+                                logging.error(f"Error adjuntando imagen inline {preview_path}: {str(e)}")
+                
+                # Adjuntar todos los PDFs si existen
+                if movimiento.tiene_pdf():
+                    for pdf_path in movimiento.pdf_paths:
                         try:
-                            with open(preview_path, 'rb') as img:
-                                img_part = MIMEImage(img.read(), _subtype="png")
-                                img_part.add_header('Content-ID', f'<{cid}>')
-                                img_part.add_header('Content-Disposition', 'inline', filename=os.path.basename(preview_path))
-                                msg.attach(img_part)
+                            with open(pdf_path, 'rb') as f:
+                                part = MIMEApplication(f.read(), Name=os.path.basename(pdf_path))
+                                part['Content-Disposition'] = f'attachment; filename="{os.path.basename(pdf_path)}"'
+                                msg.attach(part)
                         except Exception as e:
-                            logging.error(f"Error adjuntando imagen inline {preview_path}: {str(e)}")
-                # Adjuntar PDF principal si existe
-                if movimiento.tiene_pdf():
-                    try:
-                        with open(movimiento.pdf_path, 'rb') as f:
-                            part = MIMEApplication(f.read(), Name=os.path.basename(movimiento.pdf_path))
-                            part['Content-Disposition'] = f'attachment; filename="{os.path.basename(movimiento.pdf_path)}"'
-                            msg.attach(part)
-                    except Exception as e:
-                        logging.error(f"Error adjuntando archivo {movimiento.pdf_path}: {str(e)}")
+                            logging.error(f"Error adjuntando archivo {pdf_path}: {str(e)}")
                 # Adjuntar archivos de apelaciones si existen
                 if movimiento.archivos_apelaciones:
                     for archivo_apelacion in movimiento.archivos_apelaciones:
@@ -2580,12 +2715,12 @@ def enviar_correo(movimientos=None, asunto="Notificación de Sistema de Poder Ju
 #flujo principal del script
 def main():
     # Verificar si es fin de semana
-    today = datetime.datetime.now()
-    is_weekend = today.weekday() >= 5  # 5 = sábado, 6 = domingo
+    #today = datetime.datetime.now()
+    #is_weekend = today.weekday() >= 5  # 5 = sábado, 6 = domingo
 
-    if is_weekend:
-        logging.info("Hoy es fin de semana. No se realizan tareas.")
-        return
+    #if is_weekend:
+    #    logging.info("Hoy es fin de semana. No se realizan tareas.")
+    #    return
 
     # Obtiene las variables de entorno
     USERNAME = os.getenv("RUT")
